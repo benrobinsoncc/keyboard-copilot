@@ -27,7 +27,7 @@
             <key>IsExtensionManaged</key>
             <false/>
             <key>RequestsOpenAccess</key>
-            <false/>
+            <true/>
             <key>PrimaryLanguage</key>
             <string>en</string>
         </dict>
