@@ -6,6 +6,9 @@ import Combine
 private class CopilotActionState: ObservableObject {
     @Published var showingActionView = false
     @Published var actionViewContent: AnyView?
+    @Published var actionButtonText = "Insert"
+    @Published var actionButtonIcon = "arrow.down.circle"
+    @Published var currentURL: URL?
 }
 
 private struct WebView: UIViewRepresentable {
@@ -151,7 +154,9 @@ private struct CopilotActionBar: View {
 }
 
 private struct CopilotActionView: View {
-    let onInsert: () -> Void
+    let actionButtonText: String
+    let actionButtonIcon: String
+    let onAction: () -> Void
     let onCancel: () -> Void
     let content: AnyView
 
@@ -168,32 +173,41 @@ private struct CopilotActionView: View {
                     .padding(.bottom, 12)
 
                 // Action bar
-                HStack(spacing: 12) {
+                HStack {
                     Button(action: onCancel) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.primary)
-                            .frame(width: 44, height: 44)
-                            .background(Color.gray.opacity(0.1))
-                            .clipShape(Circle())
+                            .frame(width: 32, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
                     }
 
                     Spacer()
 
-                    Button(action: onInsert) {
-                        Text("Insert")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 12)
-                            .background(Color.black)
-                            .clipShape(Capsule())
+                    Button(action: onAction) {
+                        HStack(spacing: 6) {
+                            Image(systemName: actionButtonIcon)
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(actionButtonText)
+                                .font(.system(size: 15, weight: .regular))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 32)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.black)
+                        )
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
             }
             .background(Color.white)
+            .cornerRadius(16)
             .frame(height: geometry.size.height)
         }
         .frame(maxHeight: .infinity)
@@ -207,6 +221,7 @@ private struct CopilotKeyboardView: View {
     let onWriteSelection: (CopilotWriteAction) -> Void
     let onRewriteSelection: (CopilotRewriteAction) -> Void
     let onSearchSelection: (CopilotSearchAction) -> Void
+    let onOpenURL: ((URL) -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
 
@@ -234,16 +249,25 @@ private struct CopilotKeyboardView: View {
 
             if actionState.showingActionView, let content = actionState.actionViewContent {
                 CopilotActionView(
-                    onInsert: {
+                    actionButtonText: actionState.actionButtonText,
+                    actionButtonIcon: actionState.actionButtonIcon,
+                    onAction: {
+                        if let url = actionState.currentURL {
+                            onOpenURL?(url)
+                        }
                         actionState.showingActionView = false
                         actionState.actionViewContent = nil
+                        actionState.currentURL = nil
                     },
                     onCancel: {
                         actionState.showingActionView = false
                         actionState.actionViewContent = nil
+                        actionState.currentURL = nil
                     },
                     content: content
                 )
+                .padding(.horizontal, 6)
+                .padding(.top, 6)
                 .onDisappear {
                     // This will be called but we need to handle constraint removal in the view controller
                 }
@@ -289,6 +313,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 },
                 onSearchSelection: { action in
                     self?.handleSearchSelection(action)
+                },
+                onOpenURL: { url in
+                    self?.openURL(url)
                 },
                 actionState: self?.actionState ?? CopilotActionState()
             )
@@ -341,9 +368,12 @@ final class KeyboardViewController: KeyboardInputViewController {
         view.addConstraint(constraint)
         heightConstraint = constraint
 
-        // Show the WebView in the action view
+        // Show the WebView in the action view with "Open" button
         let webView = WebView(url: searchURL)
         actionState.actionViewContent = AnyView(webView)
+        actionState.actionButtonText = "Open"
+        actionState.actionButtonIcon = "safari"
+        actionState.currentURL = searchURL
         actionState.showingActionView = true
     }
 
@@ -352,5 +382,20 @@ final class KeyboardViewController: KeyboardInputViewController {
             view.removeConstraint(constraint)
             heightConstraint = nil
         }
+    }
+
+    private func openURL(_ url: URL) {
+        // Use the extension context's open method to open URLs in keyboard extensions
+        var responder: UIResponder? = self
+        while responder != nil {
+            if let application = responder as? UIApplication {
+                application.open(url, options: [:], completionHandler: nil)
+                return
+            }
+            responder = responder?.next
+        }
+
+        // Fallback: Use the openURL method through the extension context
+        extensionContext?.open(url, completionHandler: nil)
     }
 }
