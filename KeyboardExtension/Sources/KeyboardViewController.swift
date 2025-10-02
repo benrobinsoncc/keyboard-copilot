@@ -9,6 +9,7 @@ private class CopilotActionState: ObservableObject {
     @Published var actionButtonText = "Insert"
     @Published var actionButtonIcon = "arrow.down.circle"
     @Published var currentURL: URL?
+    @Published var actionViewHeight: CGFloat = 0
 }
 
 private struct WebView: UIViewRepresentable {
@@ -161,7 +162,7 @@ private struct CopilotActionView: View {
     let content: AnyView
 
     var body: some View {
-        GeometryReader { geometry in
+        VStack(spacing: 0) {
             VStack(spacing: 0) {
                 // Content area
                 content
@@ -208,10 +209,8 @@ private struct CopilotActionView: View {
             }
             .background(Color.white)
             .cornerRadius(16)
-            .frame(height: geometry.size.height)
         }
-        .frame(maxHeight: .infinity)
-        .edgesIgnoringSafeArea(.all)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -246,28 +245,46 @@ private struct CopilotKeyboardView: View {
                 }
             )
             .opacity(actionState.showingActionView ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: actionState.showingActionView)
 
             if actionState.showingActionView, let content = actionState.actionViewContent {
-                CopilotActionView(
-                    actionButtonText: actionState.actionButtonText,
-                    actionButtonIcon: actionState.actionButtonIcon,
-                    onAction: {
-                        if let url = actionState.currentURL {
-                            onOpenURL?(url)
-                        }
-                        actionState.showingActionView = false
-                        actionState.actionViewContent = nil
-                        actionState.currentURL = nil
-                    },
-                    onCancel: {
-                        actionState.showingActionView = false
-                        actionState.actionViewContent = nil
-                        actionState.currentURL = nil
-                    },
-                    content: content
-                )
+                VStack(spacing: 0) {
+                    CopilotActionView(
+                        actionButtonText: actionState.actionButtonText,
+                        actionButtonIcon: actionState.actionButtonIcon,
+                        onAction: {
+                            if let url = actionState.currentURL {
+                                onOpenURL?(url)
+                            }
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                actionState.actionViewHeight = 0
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                actionState.showingActionView = false
+                                actionState.actionViewContent = nil
+                                actionState.currentURL = nil
+                            }
+                        },
+                        onCancel: {
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                actionState.actionViewHeight = 0
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                actionState.showingActionView = false
+                                actionState.actionViewContent = nil
+                                actionState.currentURL = nil
+                            }
+                        },
+                        content: content
+                    )
+                    .frame(height: actionState.actionViewHeight)
+                    .clipped()
+
+                    Spacer(minLength: 0)
+                }
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
+                .animation(.easeInOut(duration: 0.5), value: actionState.actionViewHeight)
                 .onDisappear {
                     // This will be called but we need to handle constraint removal in the view controller
                 }
@@ -353,30 +370,46 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
-        // Expand keyboard height for better WebView interaction (responsive to screen size)
-        removeHeightConstraint()
-        let screenHeight = UIScreen.main.bounds.height
-        let keyboardHeight = min(500, screenHeight * 0.6) // Max 500px or 60% of screen height
-        let constraint = NSLayoutConstraint(
-            item: view!,
-            attribute: .height,
-            relatedBy: .equal,
-            toItem: nil,
-            attribute: .notAnAttribute,
-            multiplier: 1.0,
-            constant: keyboardHeight
-        )
-        constraint.priority = .required
-        view.addConstraint(constraint)
-        heightConstraint = constraint
-
-        // Show the WebView in the action view with "Open" button
+        // Prepare the WebView content first
         let webView = WebView(url: searchURL)
         actionState.actionViewContent = AnyView(webView)
         actionState.actionButtonText = "Open"
         actionState.actionButtonIcon = "safari"
         actionState.currentURL = searchURL
-        actionState.showingActionView = true
+
+        // Calculate heights
+        let screenHeight = UIScreen.main.bounds.height
+        let keyboardHeight = min(500, screenHeight * 0.6) // Max 500px or 60% of screen height
+
+        // Step 1: Fade out keyboard immediately
+        withAnimation(.easeOut(duration: 0.2)) {
+            actionState.showingActionView = true
+        }
+
+        // Step 2: Start growing action view from bottom immediately (starts at 0.05s)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.easeInOut(duration: 0.5)) {
+                self.actionState.actionViewHeight = keyboardHeight - 12 // Subtract padding
+            }
+        }
+
+        // Step 3: Animate keyboard height expansion simultaneously
+        UIView.animate(withDuration: 0.8, delay: 0.05, options: .curveEaseInOut) {
+            self.removeHeightConstraint()
+            let constraint = NSLayoutConstraint(
+                item: self.view!,
+                attribute: .height,
+                relatedBy: .equal,
+                toItem: nil,
+                attribute: .notAnAttribute,
+                multiplier: 1.0,
+                constant: keyboardHeight
+            )
+            constraint.priority = .required
+            self.view.addConstraint(constraint)
+            self.heightConstraint = constraint
+            self.view.layoutIfNeeded()
+        }
     }
 
     private func removeHeightConstraint() {
