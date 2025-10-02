@@ -353,8 +353,10 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
-        // Expand keyboard height for better WebView interaction
+        // Expand keyboard height for better WebView interaction (responsive to screen size)
         removeHeightConstraint()
+        let screenHeight = UIScreen.main.bounds.height
+        let keyboardHeight = min(500, screenHeight * 0.6) // Max 500px or 60% of screen height
         let constraint = NSLayoutConstraint(
             item: view!,
             attribute: .height,
@@ -362,7 +364,7 @@ final class KeyboardViewController: KeyboardInputViewController {
             toItem: nil,
             attribute: .notAnAttribute,
             multiplier: 1.0,
-            constant: 500
+            constant: keyboardHeight
         )
         constraint.priority = .required
         view.addConstraint(constraint)
