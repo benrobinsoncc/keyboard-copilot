@@ -1,5 +1,29 @@
 import KeyboardKit
 import SwiftUI
+import WebKit
+import Combine
+
+private class CopilotActionState: ObservableObject {
+    @Published var showingActionView = false
+    @Published var actionViewContent: AnyView?
+}
+
+private struct WebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        // Only load if URL has changed
+        if uiView.url != url {
+            uiView.load(URLRequest(url: url))
+        }
+    }
+}
 
 private enum CopilotWriteAction: String, CaseIterable, Identifiable {
     case compose = "Compose"
@@ -126,6 +150,57 @@ private struct CopilotActionBar: View {
     }
 }
 
+private struct CopilotActionView: View {
+    let onInsert: () -> Void
+    let onCancel: () -> Void
+    let content: AnyView
+
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // Content area
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Divider with 12px spacing above action bar
+                Color.gray.opacity(0.2)
+                    .frame(height: 1)
+                    .padding(.bottom, 12)
+
+                // Action bar
+                HStack(spacing: 12) {
+                    Button(action: onCancel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(Color.gray.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+
+                    Spacer()
+
+                    Button(action: onInsert) {
+                        Text("Insert")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Color.black)
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+            .background(Color.white)
+            .frame(height: geometry.size.height)
+        }
+        .frame(maxHeight: .infinity)
+        .edgesIgnoringSafeArea(.all)
+    }
+}
+
 private struct CopilotKeyboardView: View {
     let services: Keyboard.Services
     let state: Keyboard.State
@@ -133,29 +208,54 @@ private struct CopilotKeyboardView: View {
     let onRewriteSelection: (CopilotRewriteAction) -> Void
     let onSearchSelection: (CopilotSearchAction) -> Void
 
+    @ObservedObject var actionState: CopilotActionState
+
     var body: some View {
-        KeyboardView(
-            layout: nil,
-            state: state,
-            services: services,
-            renderBackground: true,
-            buttonContent: { $0.view },
-            buttonView: { $0.view },
-            collapsedView: { $0.view },
-            emojiKeyboard: { $0.view },
-            toolbar: { _ in
-                CopilotActionBar(
-                    selectedText: nil,
-                    onWriteSelection: onWriteSelection,
-                    onRewriteSelection: onRewriteSelection,
-                    onSearchSelection: onSearchSelection
+        ZStack {
+            KeyboardView(
+                layout: nil,
+                state: state,
+                services: services,
+                renderBackground: true,
+                buttonContent: { $0.view },
+                buttonView: { $0.view },
+                collapsedView: { $0.view },
+                emojiKeyboard: { $0.view },
+                toolbar: { _ in
+                    CopilotActionBar(
+                        selectedText: nil,
+                        onWriteSelection: onWriteSelection,
+                        onRewriteSelection: onRewriteSelection,
+                        onSearchSelection: onSearchSelection
+                    )
+                }
+            )
+            .opacity(actionState.showingActionView ? 0 : 1)
+
+            if actionState.showingActionView, let content = actionState.actionViewContent {
+                CopilotActionView(
+                    onInsert: {
+                        actionState.showingActionView = false
+                        actionState.actionViewContent = nil
+                    },
+                    onCancel: {
+                        actionState.showingActionView = false
+                        actionState.actionViewContent = nil
+                    },
+                    content: content
                 )
+                .onDisappear {
+                    // This will be called but we need to handle constraint removal in the view controller
+                }
             }
-        )
+        }
     }
 }
 
 final class KeyboardViewController: KeyboardInputViewController {
+
+    private let actionState = CopilotActionState()
+    private var heightConstraint: NSLayoutConstraint?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -165,7 +265,16 @@ final class KeyboardViewController: KeyboardInputViewController {
                 NSLog("Keyboard Copilot setup failed: \(error.localizedDescription)")
             }
         }
+
+        // Observe action state changes to manage keyboard height
+        actionState.$showingActionView.sink { [weak self] isShowing in
+            if !isShowing {
+                self?.removeHeightConstraint()
+            }
+        }.store(in: &cancellables)
     }
+
+    private var cancellables = Set<AnyCancellable>()
 
     override func viewWillSetupKeyboardView() {
         setupKeyboardView { [weak self] controller in
@@ -180,7 +289,8 @@ final class KeyboardViewController: KeyboardInputViewController {
                 },
                 onSearchSelection: { action in
                     self?.handleSearchSelection(action)
-                }
+                },
+                actionState: self?.actionState ?? CopilotActionState()
             )
         }
     }
@@ -195,5 +305,52 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     private func handleSearchSelection(_ action: CopilotSearchAction) {
         NSLog("Selected search action: \(action.rawValue)")
+
+        switch action {
+        case .google:
+            showGoogleSearch()
+        case .explain, .factCheck:
+            // TODO: Implement these actions later
+            break
+        }
+    }
+
+    private func showGoogleSearch() {
+        // Get the current text from the text field
+        guard let textProxy = textDocumentProxy as? UITextDocumentProxy else { return }
+        let searchText = textProxy.documentContextBeforeInput ?? ""
+
+        // Encode the search query
+        guard let encodedQuery = searchText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let searchURL = URL(string: "https://www.google.com/search?q=\(encodedQuery)") else {
+            return
+        }
+
+        // Expand keyboard height for better WebView interaction
+        removeHeightConstraint()
+        let constraint = NSLayoutConstraint(
+            item: view!,
+            attribute: .height,
+            relatedBy: .equal,
+            toItem: nil,
+            attribute: .notAnAttribute,
+            multiplier: 1.0,
+            constant: 500
+        )
+        constraint.priority = .required
+        view.addConstraint(constraint)
+        heightConstraint = constraint
+
+        // Show the WebView in the action view
+        let webView = WebView(url: searchURL)
+        actionState.actionViewContent = AnyView(webView)
+        actionState.showingActionView = true
+    }
+
+    private func removeHeightConstraint() {
+        if let constraint = heightConstraint {
+            view.removeConstraint(constraint)
+            heightConstraint = nil
+        }
     }
 }
