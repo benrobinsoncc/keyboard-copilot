@@ -2,41 +2,55 @@ import KeyboardKit
 import SwiftUI
 
 private enum CopilotWriteAction: String, CaseIterable, Identifiable {
-    case generate = "Generate"
+    case compose = "Compose"
     case rewrite = "Rewrite"
-    case proofread = "Proofread"
-    case tone = "Tone"
+    case shortcuts = "Shortcuts"
 
     var id: String { rawValue }
 
     var symbolName: String {
         switch self {
-        case .generate: return "sparkles"
+        case .compose: return "sparkles"
         case .rewrite: return "arrow.triangle.2.circlepath"
-        case .proofread: return "checkmark.seal"
-        case .tone: return "slider.horizontal.3"
+        case .shortcuts: return "line.3.horizontal"
+        }
+    }
+}
+
+private enum CopilotRewriteAction: String, CaseIterable, Identifiable {
+    case polish = "Polish"
+    case shorten = "Shorten"
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .polish: return "checkmark.seal"
+        case .shorten: return "text.badge.minus"
         }
     }
 }
 
 private enum CopilotSearchAction: String, CaseIterable, Identifiable {
-    case aiAnswer = "AI answer"
-    case images = "Images"
-    case maps = "Maps"
+    case google = "Google"
+    case explain = "Explain"
+    case factCheck = "Fact check"
 
     var id: String { rawValue }
 
     var symbolName: String {
         switch self {
-        case .aiAnswer: return "brain"
-        case .images: return "photo.on.rectangle"
-        case .maps: return "map"
+        case .google: return "arrow.up.forward.square"
+        case .explain: return "lightbulb"
+        case .factCheck: return "checkmark.shield"
         }
     }
 }
 
 private struct CopilotActionBar: View {
+    let selectedText: String?
     let onWriteSelection: (CopilotWriteAction) -> Void
+    let onRewriteSelection: (CopilotRewriteAction) -> Void
     let onSearchSelection: (CopilotSearchAction) -> Void
 
     var body: some View {
@@ -51,12 +65,20 @@ private struct CopilotActionBar: View {
 
     private var writeMenu: some View {
         Menu {
-            ForEach(CopilotWriteAction.allCases) { option in
-                Button {
-                    onWriteSelection(option)
-                } label: {
-                    Label(option.rawValue, systemImage: option.symbolName)
-                }
+            Button(action: { onWriteSelection(.compose) }) {
+                Label("Compose", systemImage: "sparkles")
+            }
+
+            Button(action: { onRewriteSelection(.polish) }) {
+                Label("Polish", systemImage: "checkmark.seal")
+            }
+
+            Button(action: { onRewriteSelection(.shorten) }) {
+                Label("Shorten", systemImage: "text.badge.minus")
+            }
+
+            Button(action: { onWriteSelection(.shortcuts) }) {
+                Label("Shortcuts", systemImage: "line.3.horizontal")
             }
         } label: {
             pillLabel(symbol: "square.and.pencil", title: "Write")
@@ -67,12 +89,14 @@ private struct CopilotActionBar: View {
 
     private var searchMenu: some View {
         Menu {
-            ForEach(CopilotSearchAction.allCases) { option in
-                Button {
-                    onSearchSelection(option)
-                } label: {
-                    Label(option.rawValue, systemImage: option.symbolName)
-                }
+            Button(action: { onSearchSelection(.google) }) {
+                Label("Google", systemImage: "arrow.up.forward.square")
+            }
+            Button(action: { onSearchSelection(.explain) }) {
+                Label("Explain", systemImage: "lightbulb")
+            }
+            Button(action: { onSearchSelection(.factCheck) }) {
+                Label("Fact check", systemImage: "checkmark.shield")
             }
         } label: {
             pillLabel(symbol: "magnifyingglass", title: "Search")
@@ -106,6 +130,7 @@ private struct CopilotKeyboardView: View {
     let services: Keyboard.Services
     let state: Keyboard.State
     let onWriteSelection: (CopilotWriteAction) -> Void
+    let onRewriteSelection: (CopilotRewriteAction) -> Void
     let onSearchSelection: (CopilotSearchAction) -> Void
 
     var body: some View {
@@ -120,7 +145,9 @@ private struct CopilotKeyboardView: View {
             emojiKeyboard: { $0.view },
             toolbar: { _ in
                 CopilotActionBar(
+                    selectedText: nil,
                     onWriteSelection: onWriteSelection,
+                    onRewriteSelection: onRewriteSelection,
                     onSearchSelection: onSearchSelection
                 )
             }
@@ -148,6 +175,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 onWriteSelection: { action in
                     self?.handleWriteSelection(action)
                 },
+                onRewriteSelection: { action in
+                    self?.handleRewriteSelection(action)
+                },
                 onSearchSelection: { action in
                     self?.handleSearchSelection(action)
                 }
@@ -157,6 +187,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     private func handleWriteSelection(_ action: CopilotWriteAction) {
         NSLog("Selected write action: \(action.rawValue)")
+    }
+
+    private func handleRewriteSelection(_ action: CopilotRewriteAction) {
+        NSLog("Selected rewrite action: \(action.rawValue)")
     }
 
     private func handleSearchSelection(_ action: CopilotSearchAction) {
