@@ -138,32 +138,59 @@ private struct BlurredText: View {
     let font: Font
     let color: Color
 
-    private let lines: [(line: String, startIndex: Int)]
+    private let paragraphs: [(lines: [(line: String, startIndex: Int)], isEmptyLine: Bool)]
 
     init(text: String, font: Font, color: Color) {
         self.text = text
         self.font = font
         self.color = color
 
-        // Split into lines first, then handle words within each line
+        // Split into lines first, then group into paragraphs
         let textLines = text.components(separatedBy: .newlines)
         var charIndex = 0
-        var result: [(line: String, startIndex: Int)] = []
+        var currentParagraphLines: [(line: String, startIndex: Int)] = []
+        var result: [(lines: [(line: String, startIndex: Int)], isEmptyLine: Bool)] = []
 
         for line in textLines {
-            result.append((line, charIndex))
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                // Empty line - close current paragraph and add spacing
+                if !currentParagraphLines.isEmpty {
+                    result.append((currentParagraphLines, false))
+                    currentParagraphLines = []
+                }
+                result.append(([(line, charIndex)], true))
+            } else {
+                currentParagraphLines.append((line, charIndex))
+            }
             charIndex += line.count + 1 // +1 for newline character
         }
 
-        self.lines = result
+        // Add remaining paragraph
+        if !currentParagraphLines.isEmpty {
+            result.append((currentParagraphLines, false))
+        }
+
+        self.paragraphs = result
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { lineIndex, lineData in
-                BlurredLine(line: lineData.line, startIndex: lineData.startIndex, font: font, color: color)
+            ForEach(Array(paragraphs.enumerated()), id: \.offset) { paragraphIndex, paragraphData in
+                if paragraphData.isEmptyLine {
+                    // Empty line for paragraph spacing
+                    Spacer()
+                        .frame(height: 8)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(paragraphData.lines.enumerated()), id: \.offset) { lineIndex, lineData in
+                            BlurredLine(line: lineData.line, startIndex: lineData.startIndex, font: font, color: color)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -173,7 +200,8 @@ private struct BlurredLine: View {
     let font: Font
     let color: Color
 
-    private let wordData: [(word: String, startIndex: Int)]
+    private let wordData: [(word: String, startIndex: Int, isBold: Bool)]
+    private let isHeader: Bool
 
     init(line: String, startIndex: Int, font: Font, color: Color) {
         self.line = line
@@ -181,14 +209,64 @@ private struct BlurredLine: View {
         self.font = font
         self.color = color
 
-        // Pre-compute word data once during init
-        let words = line.split(separator: " ", omittingEmptySubsequences: false)
-        var charIndex = startIndex
-        var result: [(word: String, startIndex: Int)] = []
+        // Check if line starts with ### (header)
+        var processedLine = line
+        var headerOffset = 0
+        if line.hasPrefix("### ") {
+            processedLine = String(line.dropFirst(4)) // Remove "### "
+            headerOffset = 4
+            self.isHeader = true
+        } else if line.hasPrefix("##") {
+            processedLine = String(line.dropFirst(3)) // Remove "## "
+            headerOffset = 3
+            self.isHeader = true
+        } else if line.hasPrefix("#") {
+            processedLine = String(line.dropFirst(2)) // Remove "# "
+            headerOffset = 2
+            self.isHeader = true
+        } else {
+            self.isHeader = false
+        }
 
-        for word in words {
-            result.append((String(word), charIndex))
-            charIndex += word.count + 1
+        // Parse markdown bold (**text**) and split into words
+        var result: [(word: String, startIndex: Int, isBold: Bool)] = []
+        var currentIndex = startIndex + headerOffset
+        var remainingText = processedLine
+
+        while !remainingText.isEmpty {
+            if let boldRange = remainingText.range(of: "\\*\\*([^*]+)\\*\\*", options: .regularExpression) {
+                // Add words before bold
+                let beforeBold = String(remainingText[..<boldRange.lowerBound])
+                if !beforeBold.isEmpty {
+                    let words = beforeBold.split(separator: " ", omittingEmptySubsequences: false)
+                    for word in words {
+                        result.append((String(word), currentIndex, false))
+                        currentIndex += word.count + 1
+                    }
+                }
+
+                // Add bold text words (remove the ** markers)
+                let boldWithMarkers = String(remainingText[boldRange])
+                let boldText = String(boldWithMarkers.dropFirst(2).dropLast(2))
+                let boldWords = boldText.split(separator: " ", omittingEmptySubsequences: false)
+                currentIndex += 2 // Skip the opening **
+                for word in boldWords {
+                    result.append((String(word), currentIndex, true))
+                    currentIndex += word.count + 1
+                }
+                currentIndex += 2 // Skip the closing **
+
+                // Move to remaining text
+                remainingText = String(remainingText[boldRange.upperBound...])
+            } else {
+                // No more bold text, add remaining words as regular
+                let words = remainingText.split(separator: " ", omittingEmptySubsequences: false)
+                for word in words {
+                    result.append((String(word), currentIndex, false))
+                    currentIndex += word.count + 1
+                }
+                break
+            }
         }
 
         self.wordData = result
@@ -198,11 +276,19 @@ private struct BlurredLine: View {
         WrappingHStack(spacing: 0) {
             ForEach(Array(wordData.enumerated()), id: \.offset) { index, data in
                 HStack(spacing: 0) {
-                    AnimatedWord(word: data.word, startIndex: data.startIndex, font: font, color: color)
+                    AnimatedWord(
+                        word: data.word,
+                        startIndex: data.startIndex,
+                        font: (isHeader || data.isBold) ? font.weight(.semibold) : font,
+                        color: color
+                    )
                     if index < wordData.count - 1 {
-                        AnimatedCharacter(character: " ", index: data.startIndex + data.word.count)
-                            .font(font)
-                            .foregroundColor(color)
+                        AnimatedCharacter(
+                            character: " ",
+                            index: data.startIndex + data.word.count
+                        )
+                        .font((isHeader || data.isBold) ? font.weight(.semibold) : font)
+                        .foregroundColor(color)
                     }
                 }
             }
