@@ -697,7 +697,9 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Step 2: Start growing action view from bottom immediately (starts at 0.05s)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             withAnimation(.easeInOut(duration: 0.6)) {
-                self.actionState.actionViewHeight = targetHeight - 12 // Subtract padding
+                // For text responses (expandHeight = false), use current keyboard height minus top padding (6px)
+                // For Google webview (expandHeight = true), use calculated expanded height minus top padding (6px)
+                self.actionState.actionViewHeight = targetHeight - 6
             }
         }
 
@@ -918,7 +920,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Update action view height for expanded state
         if actionState.isExpanded {
             withAnimation(.easeInOut(duration: 0.4)) {
-                actionState.actionViewHeight = expandedHeight - 12 // Subtract padding
+                actionState.actionViewHeight = expandedHeight - 6 // Subtract top padding
             }
         }
 
