@@ -911,13 +911,10 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var expandedHeight: CGFloat = 0
     private var collapsedHeight: CGFloat = 0
     private lazy var openAIService: OpenAIService = {
-        if let apiKey = Self.loadAPIKey() {
-            return OpenAIService(apiKey: apiKey)
-        } else {
-            // Fallback to hardcoded key temporarily
-            NSLog("WARNING: Using fallback API key")
-            return OpenAIService(apiKey: "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")
+        guard let apiKey = Self.loadAPIKey() else {
+            fatalError("Failed to load OpenAI API key from Config.plist")
         }
+        return OpenAIService(apiKey: apiKey)
     }()
 
     private static func loadAPIKey() -> String? {
