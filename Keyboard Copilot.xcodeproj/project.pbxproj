@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		52C1CC592E9042F300660581 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C1CC582E9042F300660581 /* OpenAIService.swift */; };
 		52D931792E8DAA2300613204 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = 52D931782E8DAA2300613204 /* KeyboardKit */; };
 		A10000000000000000000040 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000030 /* AppDelegate.swift */; };
 		A10000000000000000000041 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000031 /* SceneDelegate.swift */; };
@@ -44,6 +45,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		52C1CC582E9042F300660581 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
 		A1000000000000000000001B /* Keyboard Copilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Keyboard Copilot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000023 /* Keyboard Copilot.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; name = "Keyboard Copilot.appex"; path = KeyboardCopilotKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000030 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@
 		A10000000000000000000009 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				52C1CC582E9042F300660581 /* OpenAIService.swift */,
 				A10000000000000000000034 /* KeyboardViewController.swift */,
 			);
 			path = Sources;
@@ -276,6 +279,7 @@
 				A10000000000000000000045 /* KeyboardViewController.swift in Sources */,
 				A10000000000000000000044 /* KeyboardActionHandler.swift in Sources */,
 				A10000000000000000000048 /* KeyboardApp+Copilot.swift in Sources */,
+				52C1CC592E9042F300660581 /* OpenAIService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

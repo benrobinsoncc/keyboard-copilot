@@ -16,6 +16,7 @@ private class CopilotActionState: ObservableObject {
     @Published var isExpanded = true
     @Published var allowsToggle = false
     @Published var toggleIconState = true // Separate state for icon that updates after animation
+    @Published var isLoading = false
     var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
@@ -41,6 +42,7 @@ private struct WebView: UIViewRepresentable {
 private struct TextResponseView: View {
     let headerText: String
     let responseText: String
+    let isLoading: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -52,15 +54,29 @@ private struct TextResponseView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 8)
 
-            // Response text (scrollable)
-            ScrollView {
-                Text(responseText)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Response text (scrollable) or loading indicator
+            if isLoading {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(1.2)
+                        .padding()
+                    Text("Generating...")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    Text(responseText)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -440,6 +456,7 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var currentInputText: String?
     private var expandedHeight: CGFloat = 0
     private var collapsedHeight: CGFloat = 0
+    private lazy var openAIService = OpenAIService(apiKey: "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")
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -554,22 +571,51 @@ final class KeyboardViewController: KeyboardInputViewController {
         currentActionType = .explain
         currentInputText = text
 
-        // Placeholder response for now
-        let placeholderResponse = "Metacognition is the process of thinking about your own thinking. It involves being aware of how you learn, plan, and solve problems, and adjusting your strategies to improve outcomes."
-
+        // Show loading state
+        actionState.isLoading = true
         let textResponseView = TextResponseView(
             headerText: "Explain",
-            responseText: placeholderResponse
+            responseText: "",
+            isLoading: true
         )
 
         showActionView(
             content: AnyView(textResponseView),
             buttonText: "Insert",
             buttonIcon: "checkmark.circle",
-            responseText: placeholderResponse,
+            responseText: nil,
             expandHeight: false,
             growFromBottom: true
         )
+
+        // Call OpenAI API
+        openAIService.explain(inputText: text) { [weak self] result in
+            guard let self = self else { return }
+
+            self.actionState.isLoading = false
+
+            switch result {
+            case .success(let response):
+                let updatedView = TextResponseView(
+                    headerText: "Explain",
+                    responseText: response,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(updatedView)
+                self.actionState.responseText = response
+
+            case .failure(let error):
+                let errorMessage = "Failed to generate response. Please try again."
+                NSLog("Explain error: \(error)")
+                let errorView = TextResponseView(
+                    headerText: "Explain",
+                    responseText: errorMessage,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(errorView)
+                self.actionState.responseText = errorMessage
+            }
+        }
     }
 
     private func showFactCheck() {
@@ -578,22 +624,51 @@ final class KeyboardViewController: KeyboardInputViewController {
         currentActionType = .factCheck
         currentInputText = text
 
-        // Placeholder response for now
-        let placeholderResponse = "Mostly false. While coffee has a mild diuretic effect, studies show it doesn't cause dehydration when consumed in normal amounts. Regular coffee drinkers adapt, and it still contributes to daily fluid intake."
-
+        // Show loading state
+        actionState.isLoading = true
         let textResponseView = TextResponseView(
             headerText: "Fact Check",
-            responseText: placeholderResponse
+            responseText: "",
+            isLoading: true
         )
 
         showActionView(
             content: AnyView(textResponseView),
             buttonText: "Insert",
             buttonIcon: "checkmark.circle",
-            responseText: placeholderResponse,
+            responseText: nil,
             expandHeight: false,
             growFromBottom: true
         )
+
+        // Call OpenAI API
+        openAIService.factCheck(inputText: text) { [weak self] result in
+            guard let self = self else { return }
+
+            self.actionState.isLoading = false
+
+            switch result {
+            case .success(let response):
+                let updatedView = TextResponseView(
+                    headerText: "Fact Check",
+                    responseText: response,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(updatedView)
+                self.actionState.responseText = response
+
+            case .failure(let error):
+                let errorMessage = "Failed to generate response. Please try again."
+                NSLog("Fact Check error: \(error)")
+                let errorView = TextResponseView(
+                    headerText: "Fact Check",
+                    responseText: errorMessage,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(errorView)
+                self.actionState.responseText = errorMessage
+            }
+        }
     }
 
     private func showCompose() {
@@ -602,22 +677,51 @@ final class KeyboardViewController: KeyboardInputViewController {
         currentWriteActionType = .compose
         currentInputText = text
 
-        // Mock response for now
-        let mockResponse = "I'd like to schedule a meeting with you tomorrow. Would you be available to discuss our upcoming project and next steps?"
-
+        // Show loading state
+        actionState.isLoading = true
         let textResponseView = TextResponseView(
             headerText: "Compose",
-            responseText: mockResponse
+            responseText: "",
+            isLoading: true
         )
 
         showActionView(
             content: AnyView(textResponseView),
             buttonText: "Insert",
             buttonIcon: "checkmark.circle",
-            responseText: mockResponse,
+            responseText: nil,
             expandHeight: false,
             growFromBottom: true
         )
+
+        // Call OpenAI API
+        openAIService.compose(inputText: text) { [weak self] result in
+            guard let self = self else { return }
+
+            self.actionState.isLoading = false
+
+            switch result {
+            case .success(let response):
+                let updatedView = TextResponseView(
+                    headerText: "Compose",
+                    responseText: response,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(updatedView)
+                self.actionState.responseText = response
+
+            case .failure(let error):
+                let errorMessage = "Failed to generate response. Please try again."
+                NSLog("Compose error: \(error)")
+                let errorView = TextResponseView(
+                    headerText: "Compose",
+                    responseText: errorMessage,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(errorView)
+                self.actionState.responseText = errorMessage
+            }
+        }
     }
 
     private func showPolish() {
@@ -626,22 +730,51 @@ final class KeyboardViewController: KeyboardInputViewController {
         currentRewriteActionType = .polish
         currentInputText = text
 
-        // Mock response for now
-        let mockResponse = "Could you please send me the file at your earliest convenience? I would greatly appreciate it."
-
+        // Show loading state
+        actionState.isLoading = true
         let textResponseView = TextResponseView(
             headerText: "Polish",
-            responseText: mockResponse
+            responseText: "",
+            isLoading: true
         )
 
         showActionView(
             content: AnyView(textResponseView),
             buttonText: "Insert",
             buttonIcon: "checkmark.circle",
-            responseText: mockResponse,
+            responseText: nil,
             expandHeight: false,
             growFromBottom: true
         )
+
+        // Call OpenAI API
+        openAIService.polish(inputText: text) { [weak self] result in
+            guard let self = self else { return }
+
+            self.actionState.isLoading = false
+
+            switch result {
+            case .success(let response):
+                let updatedView = TextResponseView(
+                    headerText: "Polish",
+                    responseText: response,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(updatedView)
+                self.actionState.responseText = response
+
+            case .failure(let error):
+                let errorMessage = "Failed to generate response. Please try again."
+                NSLog("Polish error: \(error)")
+                let errorView = TextResponseView(
+                    headerText: "Polish",
+                    responseText: errorMessage,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(errorView)
+                self.actionState.responseText = errorMessage
+            }
+        }
     }
 
     private func showShorten() {
@@ -650,22 +783,51 @@ final class KeyboardViewController: KeyboardInputViewController {
         currentRewriteActionType = .shorten
         currentInputText = text
 
-        // Mock response for now
-        let mockResponse = "Can you help with this task when free?"
-
+        // Show loading state
+        actionState.isLoading = true
         let textResponseView = TextResponseView(
             headerText: "Shorten",
-            responseText: mockResponse
+            responseText: "",
+            isLoading: true
         )
 
         showActionView(
             content: AnyView(textResponseView),
             buttonText: "Insert",
             buttonIcon: "checkmark.circle",
-            responseText: mockResponse,
+            responseText: nil,
             expandHeight: false,
             growFromBottom: true
         )
+
+        // Call OpenAI API
+        openAIService.shorten(inputText: text) { [weak self] result in
+            guard let self = self else { return }
+
+            self.actionState.isLoading = false
+
+            switch result {
+            case .success(let response):
+                let updatedView = TextResponseView(
+                    headerText: "Shorten",
+                    responseText: response,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(updatedView)
+                self.actionState.responseText = response
+
+            case .failure(let error):
+                let errorMessage = "Failed to generate response. Please try again."
+                NSLog("Shorten error: \(error)")
+                let errorView = TextResponseView(
+                    headerText: "Shorten",
+                    responseText: errorMessage,
+                    isLoading: false
+                )
+                self.actionState.actionViewContent = AnyView(errorView)
+                self.actionState.responseText = errorMessage
+            }
+        }
     }
 
     private func showActionView(content: AnyView, buttonText: String, buttonIcon: String, url: URL? = nil, responseText: String? = nil, expandHeight: Bool = false, growFromBottom: Bool = false, allowsToggle: Bool = false) {
@@ -763,101 +925,42 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
-        // Handle text response reloading for search actions
+        // Re-call the API for the current action with the stored input text
+        guard let inputText = currentInputText else { return }
+
+        // Handle search actions
         if let actionType = currentActionType {
-            let alternativeResponses: [CopilotSearchAction: [String]] = [
-                .explain: [
-                    "Metacognition is the process of thinking about your own thinking. It involves being aware of how you learn, plan, and solve problems, and adjusting your strategies to improve outcomes.",
-                    "Metacognition refers to awareness and understanding of one's own thought processes. It's essentially 'thinking about thinking' - monitoring how you learn and adapt your strategies accordingly.",
-                    "In simple terms, metacognition is your ability to observe and analyze your own mental processes, helping you become more effective at learning and problem-solving."
-                ],
-                .factCheck: [
-                    "Mostly false. While coffee has a mild diuretic effect, studies show it doesn't cause dehydration when consumed in normal amounts. Regular coffee drinkers adapt, and it still contributes to daily fluid intake.",
-                    "False. Research indicates that moderate coffee consumption doesn't lead to dehydration. The body adapts to regular caffeine intake, and coffee contributes to overall hydration.",
-                    "Not true. While coffee is a mild diuretic, it doesn't cause significant dehydration. Studies show that coffee counts toward daily fluid intake for regular drinkers."
-                ]
-            ]
-
-            if let responses = alternativeResponses[actionType] {
-                let currentResponse = actionState.responseText ?? ""
-                if let currentIndex = responses.firstIndex(of: currentResponse) {
-                    let nextIndex = (currentIndex + 1) % responses.count
-                    let newResponse = responses[nextIndex]
-
-                    let textResponseView = TextResponseView(
-                        headerText: actionType == .explain ? "Explain" : "Fact Check",
-                        responseText: newResponse
-                    )
-
-                    actionState.actionViewContent = AnyView(textResponseView)
-                    actionState.responseText = newResponse
-                }
+            switch actionType {
+            case .explain:
+                showExplain()
+            case .factCheck:
+                showFactCheck()
+            case .google:
+                break // Google doesn't need reload (handled above)
             }
+            return
         }
 
-        // Handle text response reloading for write actions (Compose)
+        // Handle write actions
         if let writeActionType = currentWriteActionType {
-            let alternativeResponses: [CopilotWriteAction: [String]] = [
-                .compose: [
-                    "I'd like to schedule a meeting with you tomorrow. Would you be available to discuss our upcoming project and next steps?",
-                    "Could we meet tomorrow? I'd appreciate the opportunity to go over the project details with you.",
-                    "Would you have time for a meeting tomorrow? I'd like to discuss the project and get your input on our approach."
-                ]
-            ]
-
-            if let responses = alternativeResponses[writeActionType] {
-                let currentResponse = actionState.responseText ?? ""
-                if let currentIndex = responses.firstIndex(of: currentResponse) {
-                    let nextIndex = (currentIndex + 1) % responses.count
-                    let newResponse = responses[nextIndex]
-
-                    let textResponseView = TextResponseView(
-                        headerText: "Compose",
-                        responseText: newResponse
-                    )
-
-                    actionState.actionViewContent = AnyView(textResponseView)
-                    actionState.responseText = newResponse
-                }
+            switch writeActionType {
+            case .compose:
+                showCompose()
+            case .rewrite, .shortcuts:
+                break
             }
+            return
         }
 
-        // Handle text response reloading for rewrite actions (Polish/Shorten)
+        // Handle rewrite actions
         if let rewriteActionType = currentRewriteActionType {
-            let alternativeResponses: [CopilotRewriteAction: [String]] = [
-                .polish: [
-                    "Could you please send me the file at your earliest convenience? I would greatly appreciate it.",
-                    "I would be grateful if you could send me the file when you have a moment. Thank you in advance.",
-                    "Would you mind sending me the file when it's convenient for you? I'd really appreciate your help."
-                ],
-                .shorten: [
-                    "Can you help with this task when free?",
-                    "Help with this when available?",
-                    "Need help with this task - got time?"
-                ]
-            ]
-
-            if let responses = alternativeResponses[rewriteActionType] {
-                let currentResponse = actionState.responseText ?? ""
-                if let currentIndex = responses.firstIndex(of: currentResponse) {
-                    let nextIndex = (currentIndex + 1) % responses.count
-                    let newResponse = responses[nextIndex]
-
-                    let headerText: String
-                    switch rewriteActionType {
-                    case .polish: headerText = "Polish"
-                    case .shorten: headerText = "Shorten"
-                    }
-
-                    let textResponseView = TextResponseView(
-                        headerText: headerText,
-                        responseText: newResponse
-                    )
-
-                    actionState.actionViewContent = AnyView(textResponseView)
-                    actionState.responseText = newResponse
-                }
+            switch rewriteActionType {
+            case .polish:
+                showPolish()
+            case .shorten:
+                showShorten()
             }
+            return
         }
     }
 
