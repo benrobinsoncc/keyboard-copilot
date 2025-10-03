@@ -369,6 +369,11 @@ private struct CopilotKeyboardView: View {
                 .animation(.easeInOut(duration: 0.5), value: actionState.actionViewHeight)
             }
 
+            // Spacer to push keyboard to bottom in collapsed state
+            if actionState.showingActionView && !actionState.isExpanded {
+                Spacer(minLength: 0)
+            }
+
             // Keyboard view (visible when not showing action view, or when collapsed)
             if !actionState.showingActionView || !actionState.isExpanded {
                 KeyboardView(
@@ -396,7 +401,7 @@ private struct CopilotKeyboardView: View {
                 .animation(.easeInOut(duration: 0.3), value: actionState.isExpanded)
             }
         }
-        .frame(maxHeight: .infinity, alignment: .bottom)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
