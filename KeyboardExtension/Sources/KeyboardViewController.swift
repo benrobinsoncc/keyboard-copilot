@@ -16,14 +16,17 @@ private class CopilotActionState: ObservableObject {
     @Published var isExpanded = true
     @Published var allowsToggle = false
     @Published var toggleIconState = true // Separate state for icon that updates after animation
+    var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
 private struct WebView: UIViewRepresentable {
     let url: URL
+    let onWebViewCreated: ((WKWebView) -> Void)?
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView()
         webView.load(URLRequest(url: url))
+        onWebViewCreated?(webView)
         return webView
     }
 
@@ -195,6 +198,7 @@ private struct CopilotActionView: View {
     let onCancel: () -> Void
     let onReload: (() -> Void)?
     let onCopy: (() -> Void)?
+    let onShare: (() -> Void)?
     let onToggle: (() -> Void)?
     let content: AnyView
     let isCopied: Bool
@@ -226,8 +230,6 @@ private struct CopilotActionView: View {
                                     .fill(Color.gray.opacity(0.1))
                             )
                     }
-
-                    Spacer()
 
                     // Show reload and copy buttons if available
                     if let onReload = onReload {
@@ -275,6 +277,8 @@ private struct CopilotActionView: View {
                         }
                     }
 
+                    Spacer()
+
                     Button(action: onAction) {
                         HStack(spacing: 6) {
                             Image(systemName: actionButtonIcon)
@@ -282,13 +286,32 @@ private struct CopilotActionView: View {
                             Text(actionButtonText)
                                 .font(.system(size: 15, weight: .regular))
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .padding(.horizontal, 12)
                         .frame(height: 32)
                         .background(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.black)
+                                .fill(Color.gray.opacity(0.1))
                         )
+                    }
+
+                    // Show insert button if available
+                    if let onShare = onShare {
+                        Button(action: onShare) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Insert")
+                                    .font(.system(size: 15, weight: .regular))
+                            }
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -311,6 +334,7 @@ private struct CopilotKeyboardView: View {
     let onInsertText: ((String) -> Void)?
     let onReload: (() -> Void)?
     let onCopy: (() -> Void)?
+    let onShare: (() -> Void)?
     let onToggle: (() -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
@@ -339,6 +363,7 @@ private struct CopilotKeyboardView: View {
                             actionState.growFromBottom = false
                             actionState.isExpanded = true
                             actionState.allowsToggle = false
+                            actionState.currentWebView = nil
                         }
                     },
                     onCancel: {
@@ -353,10 +378,12 @@ private struct CopilotKeyboardView: View {
                             actionState.growFromBottom = false
                             actionState.isExpanded = true
                             actionState.allowsToggle = false
+                            actionState.currentWebView = nil
                         }
                     },
-                    onReload: actionState.currentURL == nil ? onReload : nil,
+                    onReload: onReload,
                     onCopy: actionState.responseText != nil ? onCopy : nil,
+                    onShare: actionState.currentURL != nil ? onShare : nil,
                     onToggle: actionState.allowsToggle ? onToggle : nil,
                     content: content,
                     isCopied: actionState.isCopied,
@@ -461,6 +488,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 },
                 onCopy: {
                     self?.handleCopy()
+                },
+                onShare: {
+                    self?.handleShare()
                 },
                 onToggle: {
                     self?.handleToggle()
@@ -616,7 +646,9 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
-        let webView = WebView(url: searchURL)
+        let webView = WebView(url: searchURL) { [weak self] webView in
+            self?.actionState.currentWebView = webView
+        }
         showActionView(
             content: AnyView(webView),
             buttonText: "Open",
@@ -636,6 +668,13 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private func handleReload() {
+        // If there's a web view, reload it
+        if let webView = actionState.currentWebView {
+            webView.reload()
+            return
+        }
+
+        // Otherwise, handle text response reloading
         guard let actionType = currentActionType else { return }
 
         // Generate a different placeholder response
@@ -686,6 +725,15 @@ final class KeyboardViewController: KeyboardInputViewController {
                 self.actionState.isCopied = false
             }
         }
+    }
+
+    private func handleShare() {
+        guard let webView = actionState.currentWebView,
+              let currentURL = webView.url else { return }
+
+        // Insert the current URL into the text field
+        guard let textProxy = textDocumentProxy as? UITextDocumentProxy else { return }
+        textProxy.insertText(currentURL.absoluteString)
     }
 
     private func replaceTextWithResponse(_ text: String) {
