@@ -579,14 +579,14 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Step 2: Start growing action view from bottom immediately (starts at 0.05s)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.easeInOut(duration: 0.5)) {
+            withAnimation(.easeInOut(duration: 0.6)) {
                 self.actionState.actionViewHeight = targetHeight - 12 // Subtract padding
             }
         }
 
         // Step 3: Animate keyboard height expansion if needed
         if expandHeight {
-            UIView.animate(withDuration: 0.8, delay: 0.05, options: .curveEaseInOut) {
+            UIView.animate(withDuration: 0.6, delay: 0.05, options: .curveEaseInOut) {
                 self.removeHeightConstraint()
                 let constraint = NSLayoutConstraint(
                     item: self.view!,
