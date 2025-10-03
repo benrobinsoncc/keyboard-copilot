@@ -13,6 +13,8 @@ private class CopilotActionState: ObservableObject {
     @Published var responseText: String?
     @Published var growFromBottom = false
     @Published var isCopied = false
+    @Published var isExpanded = true
+    @Published var allowsToggle = false
 }
 
 private struct WebView: UIViewRepresentable {
@@ -192,8 +194,11 @@ private struct CopilotActionView: View {
     let onCancel: () -> Void
     let onReload: (() -> Void)?
     let onCopy: (() -> Void)?
+    let onToggle: (() -> Void)?
     let content: AnyView
     let isCopied: Bool
+    let isExpanded: Bool
+    let allowsToggle: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -254,6 +259,20 @@ private struct CopilotActionView: View {
                         .disabled(isCopied)
                     }
 
+                    // Show toggle button if available
+                    if allowsToggle, let onToggle = onToggle {
+                        Button(action: onToggle) {
+                            Image(systemName: isExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(Color.gray.opacity(0.1))
+                                )
+                        }
+                    }
+
                     Button(action: onAction) {
                         HStack(spacing: 6) {
                             Image(systemName: actionButtonIcon)
@@ -290,128 +309,94 @@ private struct CopilotKeyboardView: View {
     let onInsertText: ((String) -> Void)?
     let onReload: (() -> Void)?
     let onCopy: (() -> Void)?
+    let onToggle: (() -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
 
     var body: some View {
-        ZStack {
-            KeyboardView(
-                layout: nil,
-                state: state,
-                services: services,
-                renderBackground: true,
-                buttonContent: { $0.view },
-                buttonView: { $0.view },
-                collapsedView: { $0.view },
-                emojiKeyboard: { $0.view },
-                toolbar: { _ in
-                    CopilotActionBar(
-                        selectedText: nil,
-                        onWriteSelection: onWriteSelection,
-                        onRewriteSelection: onRewriteSelection,
-                        onSearchSelection: onSearchSelection
-                    )
-                }
-            )
-            .opacity(actionState.showingActionView ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: actionState.showingActionView)
-
+        VStack(spacing: 0) {
+            // Action view area (only visible when showing action view)
             if actionState.showingActionView, let content = actionState.actionViewContent {
-                VStack(spacing: 0) {
-                    if !actionState.growFromBottom {
-                        CopilotActionView(
-                            actionButtonText: actionState.actionButtonText,
-                            actionButtonIcon: actionState.actionButtonIcon,
-                            onAction: {
-                                if let url = actionState.currentURL {
-                                    onOpenURL?(url)
-                                } else if let responseText = actionState.responseText {
-                                    onInsertText?(responseText)
-                                }
-                                withAnimation(.easeInOut(duration: 0.4)) {
-                                    actionState.actionViewHeight = 0
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    actionState.showingActionView = false
-                                    actionState.actionViewContent = nil
-                                    actionState.currentURL = nil
-                                    actionState.responseText = nil
-                                    actionState.growFromBottom = false
-                                }
-                            },
-                            onCancel: {
-                                withAnimation(.easeInOut(duration: 0.4)) {
-                                    actionState.actionViewHeight = 0
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    actionState.showingActionView = false
-                                    actionState.actionViewContent = nil
-                                    actionState.currentURL = nil
-                                    actionState.responseText = nil
-                                    actionState.growFromBottom = false
-                                }
-                            },
-                            onReload: actionState.currentURL == nil ? onReload : nil,
-                            onCopy: actionState.responseText != nil ? onCopy : nil,
-                            content: content,
-                            isCopied: actionState.isCopied
-                        )
-                        .frame(height: actionState.actionViewHeight)
-                        .clipped()
-
-                        Spacer(minLength: 0)
-                    } else {
-                        Spacer(minLength: 0)
-
-                        CopilotActionView(
-                            actionButtonText: actionState.actionButtonText,
-                            actionButtonIcon: actionState.actionButtonIcon,
-                            onAction: {
-                                if let url = actionState.currentURL {
-                                    onOpenURL?(url)
-                                } else if let responseText = actionState.responseText {
-                                    onInsertText?(responseText)
-                                }
-                                withAnimation(.easeInOut(duration: 0.4)) {
-                                    actionState.actionViewHeight = 0
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    actionState.showingActionView = false
-                                    actionState.actionViewContent = nil
-                                    actionState.currentURL = nil
-                                    actionState.responseText = nil
-                                    actionState.growFromBottom = false
-                                }
-                            },
-                            onCancel: {
-                                withAnimation(.easeInOut(duration: 0.4)) {
-                                    actionState.actionViewHeight = 0
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                    actionState.showingActionView = false
-                                    actionState.actionViewContent = nil
-                                    actionState.currentURL = nil
-                                    actionState.responseText = nil
-                                    actionState.growFromBottom = false
-                                }
-                            },
-                            onReload: actionState.currentURL == nil ? onReload : nil,
-                            onCopy: actionState.responseText != nil ? onCopy : nil,
-                            content: content,
-                            isCopied: actionState.isCopied
-                        )
-                        .frame(height: actionState.actionViewHeight)
-                        .clipped()
-                    }
-                }
+                CopilotActionView(
+                    actionButtonText: actionState.actionButtonText,
+                    actionButtonIcon: actionState.actionButtonIcon,
+                    onAction: {
+                        if let url = actionState.currentURL {
+                            onOpenURL?(url)
+                        } else if let responseText = actionState.responseText {
+                            onInsertText?(responseText)
+                        }
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            actionState.actionViewHeight = 0
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            actionState.showingActionView = false
+                            actionState.actionViewContent = nil
+                            actionState.currentURL = nil
+                            actionState.responseText = nil
+                            actionState.growFromBottom = false
+                            actionState.isExpanded = true
+                            actionState.allowsToggle = false
+                        }
+                    },
+                    onCancel: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            actionState.actionViewHeight = 0
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            actionState.showingActionView = false
+                            actionState.actionViewContent = nil
+                            actionState.currentURL = nil
+                            actionState.responseText = nil
+                            actionState.growFromBottom = false
+                            actionState.isExpanded = true
+                            actionState.allowsToggle = false
+                        }
+                    },
+                    onReload: actionState.currentURL == nil ? onReload : nil,
+                    onCopy: actionState.responseText != nil ? onCopy : nil,
+                    onToggle: actionState.allowsToggle ? onToggle : nil,
+                    content: content,
+                    isCopied: actionState.isCopied,
+                    isExpanded: actionState.isExpanded,
+                    allowsToggle: actionState.allowsToggle
+                )
+                .frame(height: actionState.isExpanded ? actionState.actionViewHeight : nil)
+                .frame(maxHeight: actionState.isExpanded ? nil : .infinity)
+                .clipped()
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
                 .animation(.easeInOut(duration: 0.5), value: actionState.actionViewHeight)
-                .onDisappear {
-                    // This will be called but we need to handle constraint removal in the view controller
-                }
+            }
+
+            // Keyboard view (visible when not showing action view, or when collapsed)
+            if !actionState.showingActionView || !actionState.isExpanded {
+                KeyboardView(
+                    layout: nil,
+                    state: state,
+                    services: services,
+                    renderBackground: true,
+                    buttonContent: { $0.view },
+                    buttonView: { $0.view },
+                    collapsedView: { $0.view },
+                    emojiKeyboard: { $0.view },
+                    toolbar: { _ in
+                        // Only show action bar when not showing action view
+                        if !actionState.showingActionView {
+                            CopilotActionBar(
+                                selectedText: nil,
+                                onWriteSelection: onWriteSelection,
+                                onRewriteSelection: onRewriteSelection,
+                                onSearchSelection: onSearchSelection
+                            )
+                        }
+                    }
+                )
+                .animation(.easeInOut(duration: 0.3), value: actionState.showingActionView)
+                .animation(.easeInOut(duration: 0.3), value: actionState.isExpanded)
             }
         }
+        .frame(maxHeight: .infinity, alignment: .bottom)
     }
 }
 
@@ -421,6 +406,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var heightConstraint: NSLayoutConstraint?
     private var currentActionType: CopilotSearchAction?
     private var currentInputText: String?
+    private var expandedHeight: CGFloat = 0
+    private var collapsedHeight: CGFloat = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -466,6 +453,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 },
                 onCopy: {
                     self?.handleCopy()
+                },
+                onToggle: {
+                    self?.handleToggle()
                 },
                 actionState: self?.actionState ?? CopilotActionState()
             )
@@ -553,7 +543,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         )
     }
 
-    private func showActionView(content: AnyView, buttonText: String, buttonIcon: String, url: URL? = nil, responseText: String? = nil, expandHeight: Bool = false, growFromBottom: Bool = false) {
+    private func showActionView(content: AnyView, buttonText: String, buttonIcon: String, url: URL? = nil, responseText: String? = nil, expandHeight: Bool = false, growFromBottom: Bool = false, allowsToggle: Bool = false) {
         // Prepare the content first
         actionState.actionViewContent = content
         actionState.actionButtonText = buttonText
@@ -561,12 +551,18 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.currentURL = url
         actionState.responseText = responseText
         actionState.growFromBottom = growFromBottom
+        actionState.allowsToggle = allowsToggle
+        actionState.isExpanded = true // Always start in expanded state
 
         // Calculate heights
         let screenHeight = UIScreen.main.bounds.height
-        let expandedHeight = min(500, screenHeight * 0.6) // Max 500px or 60% of screen height
+        let calculatedExpandedHeight = min(500, screenHeight * 0.6) // Max 500px or 60% of screen height
         let currentHeight = view.frame.height
-        let targetHeight = expandHeight ? expandedHeight : currentHeight
+        let targetHeight = expandHeight ? calculatedExpandedHeight : currentHeight
+
+        // Store heights for toggle functionality
+        self.expandedHeight = calculatedExpandedHeight
+        self.collapsedHeight = currentHeight
 
         // Step 1: Fade out keyboard immediately
         withAnimation(.easeOut(duration: 0.2)) {
@@ -619,7 +615,8 @@ final class KeyboardViewController: KeyboardInputViewController {
             buttonIcon: "safari",
             url: searchURL,
             expandHeight: true,
-            growFromBottom: true
+            growFromBottom: true,
+            allowsToggle: true
         )
     }
 
@@ -702,6 +699,21 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Insert the new text
         textProxy.insertText(text)
+    }
+
+    private func handleToggle() {
+        // Toggle the expanded state
+        withAnimation(.easeInOut(duration: 0.4)) {
+            actionState.isExpanded.toggle()
+        }
+
+        // Update action view height for expanded state
+        if actionState.isExpanded {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                actionState.actionViewHeight = expandedHeight - 12 // Subtract padding
+            }
+        }
+        // When collapsed, height is flexible (maxHeight: .infinity) so no need to set fixed height
     }
 
     private func openURL(_ url: URL) {
