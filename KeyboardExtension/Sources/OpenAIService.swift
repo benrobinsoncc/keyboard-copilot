@@ -88,7 +88,11 @@ class OpenAIService {
 
         Expand it naturally while keeping the original vibe. Write it in plain English - professional but casual and friendly, like you're texting a colleague.
 
-        IMPORTANT: Don't add greetings (like "Hey [name]"), sign-offs (like "Best, [name]"), or any email formatting. Just return the core message content itself, nothing else.
+        IMPORTANT:
+        - Preserve any lists, bullet points, or formatting structure from the input
+        - If input has line breaks or list structure, maintain that formatting
+        - Don't add greetings (like "Hey [name]"), sign-offs (like "Best, [name]"), or any email formatting
+        - Just return the core message content itself, nothing else
         """
         complete(prompt: prompt, temperature: 0.8, completion: completion)
     }

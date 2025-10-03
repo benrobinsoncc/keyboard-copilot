@@ -138,16 +138,52 @@ private struct BlurredText: View {
     let font: Font
     let color: Color
 
-    private let wordData: [(word: String, startIndex: Int)]
+    private let lines: [(line: String, startIndex: Int)]
 
     init(text: String, font: Font, color: Color) {
         self.text = text
         self.font = font
         self.color = color
 
-        // Pre-compute word data once during init
-        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        // Split into lines first, then handle words within each line
+        let textLines = text.components(separatedBy: .newlines)
         var charIndex = 0
+        var result: [(line: String, startIndex: Int)] = []
+
+        for line in textLines {
+            result.append((line, charIndex))
+            charIndex += line.count + 1 // +1 for newline character
+        }
+
+        self.lines = result
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { lineIndex, lineData in
+                BlurredLine(line: lineData.line, startIndex: lineData.startIndex, font: font, color: color)
+            }
+        }
+    }
+}
+
+private struct BlurredLine: View {
+    let line: String
+    let startIndex: Int
+    let font: Font
+    let color: Color
+
+    private let wordData: [(word: String, startIndex: Int)]
+
+    init(line: String, startIndex: Int, font: Font, color: Color) {
+        self.line = line
+        self.startIndex = startIndex
+        self.font = font
+        self.color = color
+
+        // Pre-compute word data once during init
+        let words = line.split(separator: " ", omittingEmptySubsequences: false)
+        var charIndex = startIndex
         var result: [(word: String, startIndex: Int)] = []
 
         for word in words {
@@ -286,19 +322,31 @@ private struct CopilotActionBar: View {
 
     private var writeMenu: some View {
         Menu {
-            Button(action: { onWriteSelection(.compose) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onWriteSelection(.compose)
+            }) {
                 Label("Compose", systemImage: "sparkles")
             }
 
-            Button(action: { onRewriteSelection(.polish) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onRewriteSelection(.polish)
+            }) {
                 Label("Polish", systemImage: "checkmark.seal")
             }
 
-            Button(action: { onRewriteSelection(.shorten) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onRewriteSelection(.shorten)
+            }) {
                 Label("Shorten", systemImage: "text.badge.minus")
             }
 
-            Button(action: { onWriteSelection(.shortcuts) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onWriteSelection(.shortcuts)
+            }) {
                 Label("Shortcuts", systemImage: "line.3.horizontal")
             }
         } label: {
@@ -310,13 +358,22 @@ private struct CopilotActionBar: View {
 
     private var searchMenu: some View {
         Menu {
-            Button(action: { onSearchSelection(.google) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onSearchSelection(.google)
+            }) {
                 Label("Google", systemImage: "arrow.up.forward.square")
             }
-            Button(action: { onSearchSelection(.explain) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onSearchSelection(.explain)
+            }) {
                 Label("Explain", systemImage: "lightbulb")
             }
-            Button(action: { onSearchSelection(.factCheck) }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onSearchSelection(.factCheck)
+            }) {
                 Label("Fact check", systemImage: "checkmark.shield")
             }
         } label: {
@@ -376,7 +433,10 @@ private struct CopilotActionView: View {
 
                 // Action bar
                 HStack {
-                    Button(action: onCancel) {
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onCancel()
+                    }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.primary)
@@ -389,7 +449,10 @@ private struct CopilotActionView: View {
 
                     // Show reload and copy buttons if available
                     if let onReload = onReload {
-                        Button(action: onReload) {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onReload()
+                        }) {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.primary)
@@ -402,7 +465,10 @@ private struct CopilotActionView: View {
                     }
 
                     if let onCopy = onCopy {
-                        Button(action: onCopy) {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onCopy()
+                        }) {
                             ZStack {
                                 Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
                                     .font(.system(size: 12, weight: .semibold))
@@ -421,7 +487,10 @@ private struct CopilotActionView: View {
 
                     // Show toggle button if available
                     if allowsToggle, let onToggle = onToggle {
-                        Button(action: onToggle) {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onToggle()
+                        }) {
                             Image(systemName: toggleIconExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.primary)
@@ -435,7 +504,10 @@ private struct CopilotActionView: View {
 
                     Spacer()
 
-                    Button(action: onAction) {
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onAction()
+                    }) {
                         HStack(spacing: 6) {
                             Image(systemName: actionButtonIcon)
                                 .font(.system(size: 12, weight: .semibold))
@@ -453,7 +525,10 @@ private struct CopilotActionView: View {
 
                     // Show insert button if available
                     if let onShare = onShare {
-                        Button(action: onShare) {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onShare()
+                        }) {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle")
                                     .font(.system(size: 12, weight: .semibold))
