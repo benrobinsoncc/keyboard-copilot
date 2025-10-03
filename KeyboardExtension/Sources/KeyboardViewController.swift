@@ -19,6 +19,8 @@ private class CopilotActionState: ObservableObject {
     @Published var allowsToggle = false
     @Published var toggleIconState = true // Separate state for icon that updates after animation
     @Published var isLoading = false
+    @Published var isReloading = false
+    @Published var shouldAnimateHeight = false // Only animate height for webview
     var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
@@ -317,7 +319,7 @@ private struct TextResponseView: View {
                         Spacer()
                         ProgressView()
                             .scaleEffect(1.2)
-                        Text("Generating...")
+                        Text("Generating")
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.gray)
                         Spacer()
@@ -505,6 +507,8 @@ private struct CopilotActionView: View {
     let allowsToggle: Bool
     let toggleIconExpanded: Bool
 
+    @ObservedObject var actionState: CopilotActionState
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -542,6 +546,8 @@ private struct CopilotActionView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.primary)
+                                .rotationEffect(.degrees(actionState.isReloading ? 180 : 0))
+                                .animation(.easeInOut(duration: 0.3), value: actionState.isReloading)
                                 .frame(width: 32, height: 32)
                                 .background(
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -701,14 +707,15 @@ private struct CopilotKeyboardView: View {
                     isCopied: actionState.isCopied,
                     isExpanded: actionState.isExpanded,
                     allowsToggle: actionState.allowsToggle,
-                    toggleIconExpanded: actionState.toggleIconState
+                    toggleIconExpanded: actionState.toggleIconState,
+                    actionState: actionState
                 )
                 .frame(height: actionState.isExpanded ? actionState.actionViewHeight : nil)
                 .frame(maxHeight: actionState.isExpanded ? nil : .infinity)
                 .clipped()
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
-                .animation(.easeInOut(duration: 0.4), value: actionState.actionViewHeight)
+                .animation(actionState.shouldAnimateHeight ? .easeInOut(duration: 0.4) : nil, value: actionState.actionViewHeight)
             }
 
             // Spacer to push keyboard to bottom in collapsed state
@@ -1101,6 +1108,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.growFromBottom = growFromBottom
         actionState.allowsToggle = allowsToggle
         actionState.isExpanded = true // Always start in expanded state
+        actionState.shouldAnimateHeight = expandHeight // Only animate for webview
 
         // Calculate heights
         let screenHeight = UIScreen.main.bounds.height
@@ -1117,13 +1125,17 @@ final class KeyboardViewController: KeyboardInputViewController {
             actionState.showingActionView = true
         }
 
-        // Step 2: Start growing action view from bottom immediately (starts at 0.05s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.easeInOut(duration: 0.6)) {
-                // For text responses (expandHeight = false), use current keyboard height minus top padding (6px)
-                // For Google webview (expandHeight = true), use calculated expanded height minus top padding (6px)
-                self.actionState.actionViewHeight = targetHeight - 6
+        // Step 2: Set action view height (animated only for webview)
+        if expandHeight {
+            // For webview: animate the growth
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                withAnimation(.easeInOut(duration: 0.6)) {
+                    self.actionState.actionViewHeight = targetHeight - 6
+                }
             }
+        } else {
+            // For text responses: set height immediately without animation
+            actionState.actionViewHeight = targetHeight - 6
         }
 
         // Step 3: Animate keyboard height expansion if needed
@@ -1180,6 +1192,14 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private func handleReload() {
+        // Trigger spin animation
+        actionState.isReloading = true
+
+        // Reset animation state after it completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.actionState.isReloading = false
+        }
+
         // If there's a web view, reload it
         if let webView = actionState.currentWebView {
             webView.reload()
