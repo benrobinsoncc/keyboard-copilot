@@ -5,6 +5,101 @@ import Combine
 import Pow
 import AnimateText
 import Vortex
+import AVFoundation
+
+private class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+    private let synthesizer = AVSpeechSynthesizer()
+    @Published var isSpeaking = false
+    private var isStopping = false
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+        configureAudioSession()
+    }
+
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        } catch {
+            NSLog("Failed to configure audio session: \(error.localizedDescription)")
+        }
+    }
+
+    func speak(_ text: String) {
+        // If already speaking, stop it
+        if synthesizer.isSpeaking || isSpeaking {
+            stop()
+            return
+        }
+
+        // Start speaking
+        DispatchQueue.main.async {
+            do {
+                let audioSession = AVAudioSession.sharedInstance()
+                try audioSession.setActive(true, options: [])
+
+                let utterance = AVSpeechUtterance(string: text)
+                utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+                utterance.rate = 0.5 // Normal speed
+
+                self.isSpeaking = true
+                self.synthesizer.speak(utterance)
+            } catch {
+                NSLog("Failed to activate audio session: \(error.localizedDescription)")
+                self.isSpeaking = false
+            }
+        }
+    }
+
+    func stop() {
+        guard !isStopping else { return }
+        isStopping = true
+
+        DispatchQueue.main.async {
+            if self.synthesizer.isSpeaking {
+                self.synthesizer.stopSpeaking(at: .immediate)
+            }
+
+            self.isSpeaking = false
+            self.isStopping = false
+
+            // Deactivate audio session
+            DispatchQueue.global(qos: .background).async {
+                do {
+                    let audioSession = AVAudioSession.sharedInstance()
+                    try audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+                } catch {
+                    NSLog("Failed to deactivate audio session: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async {
+            self.isSpeaking = false
+
+            // Deactivate audio session when finished
+            DispatchQueue.global(qos: .background).async {
+                do {
+                    let audioSession = AVAudioSession.sharedInstance()
+                    try audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+                } catch {
+                    NSLog("Failed to deactivate audio session: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async {
+            self.isSpeaking = false
+            self.isStopping = false
+        }
+    }
+}
 
 private class CopilotActionState: ObservableObject {
     @Published var showingActionView = false
@@ -516,11 +611,13 @@ private struct CopilotActionView: View {
     let onCopy: (() -> Void)?
     let onShare: (() -> Void)?
     let onToggle: (() -> Void)?
+    let onSpeak: (() -> Void)?
     let content: AnyView
     let isCopied: Bool
     let isExpanded: Bool
     let allowsToggle: Bool
     let toggleIconExpanded: Bool
+    let isSpeaking: Bool
 
     @ObservedObject var actionState: CopilotActionState
 
@@ -589,7 +686,30 @@ private struct CopilotActionView: View {
                                     .fill(Color.gray.opacity(0.1))
                             )
                         }
-                        .disabled(isCopied)
+                        .disabled(isCopied || actionState.isLoading)
+                    }
+
+                    // Show speak button if available
+                    if let onSpeak = onSpeak {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onSpeak()
+                        }) {
+                            ZStack {
+                                Image(systemName: isSpeaking ? "stop" : "speaker.wave.2")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .transition(.scale.combined(with: .opacity))
+                                    .id(isSpeaking ? "stop" : "speak")
+                            }
+                            .animation(.easeInOut(duration: 0.2), value: isSpeaking)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
+                        }
+                        .disabled(actionState.isLoading)
                     }
 
                     // Show toggle button if available
@@ -674,8 +794,10 @@ private struct CopilotKeyboardView: View {
     let onCopy: (() -> Void)?
     let onShare: (() -> Void)?
     let onToggle: (() -> Void)?
+    let onSpeak: (() -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
+    @ObservedObject var speechManager: SpeechManager
 
     var body: some View {
         VStack(spacing: 0) {
@@ -685,6 +807,9 @@ private struct CopilotKeyboardView: View {
                     actionButtonText: actionState.actionButtonText,
                     actionButtonIcon: actionState.actionButtonIcon,
                     onAction: {
+                        // Stop speech if playing
+                        speechManager.stop()
+
                         if let url = actionState.currentURL {
                             onOpenURL?(url)
                         } else if let responseText = actionState.responseText {
@@ -703,6 +828,9 @@ private struct CopilotKeyboardView: View {
                         actionState.actionViewHeight = 0
                     },
                     onCancel: {
+                        // Stop speech if playing
+                        speechManager.stop()
+
                         // Hide action view immediately to show keyboard
                         actionState.showingActionView = false
                         actionState.actionViewContent = nil
@@ -715,14 +843,16 @@ private struct CopilotKeyboardView: View {
                         actionState.actionViewHeight = 0
                     },
                     onReload: onReload,
-                    onCopy: actionState.responseText != nil ? onCopy : nil,
+                    onCopy: (actionState.responseText != nil || actionState.isLoading) ? onCopy : nil,
                     onShare: actionState.currentURL != nil ? onShare : nil,
                     onToggle: actionState.allowsToggle ? onToggle : nil,
+                    onSpeak: (actionState.responseText != nil || actionState.isLoading) ? onSpeak : nil,
                     content: content,
                     isCopied: actionState.isCopied,
                     isExpanded: actionState.isExpanded,
                     allowsToggle: actionState.allowsToggle,
                     toggleIconExpanded: actionState.toggleIconState,
+                    isSpeaking: speechManager.isSpeaking,
                     actionState: actionState
                 )
                 .frame(height: actionState.isExpanded ? actionState.actionViewHeight : nil)
@@ -772,6 +902,7 @@ private struct CopilotKeyboardView: View {
 final class KeyboardViewController: KeyboardInputViewController {
 
     private let actionState = CopilotActionState()
+    private let speechManager = SpeechManager()
     private var heightConstraint: NSLayoutConstraint?
     private var currentActionType: CopilotSearchAction?
     private var currentWriteActionType: CopilotWriteAction?
@@ -796,6 +927,18 @@ final class KeyboardViewController: KeyboardInputViewController {
                 self?.removeHeightConstraint()
             }
         }.store(in: &cancellables)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Stop speech when keyboard is dismissed
+        speechManager.stop()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Ensure speech is stopped
+        speechManager.stop()
     }
 
     private var cancellables = Set<AnyCancellable>()
@@ -832,7 +975,11 @@ final class KeyboardViewController: KeyboardInputViewController {
                 onToggle: {
                     self?.handleToggle()
                 },
-                actionState: self?.actionState ?? CopilotActionState()
+                onSpeak: {
+                    self?.handleSpeak()
+                },
+                actionState: self?.actionState ?? CopilotActionState(),
+                speechManager: self?.speechManager ?? SpeechManager()
             )
         }
     }
@@ -1283,6 +1430,11 @@ final class KeyboardViewController: KeyboardInputViewController {
                 self.actionState.isCopied = false
             }
         }
+    }
+
+    private func handleSpeak() {
+        guard let responseText = actionState.responseText else { return }
+        speechManager.speak(responseText)
     }
 
     private func handleShare() {
