@@ -15,7 +15,7 @@ class OpenAIService {
         self.apiKey = apiKey
     }
 
-    func complete(prompt: String, completion: @escaping (Result<String, OpenAIError>) -> Void) {
+    func complete(prompt: String, temperature: Double = 0.7, maxTokens: Int = 500, completion: @escaping (Result<String, OpenAIError>) -> Void) {
         guard let url = URL(string: baseURL) else {
             completion(.failure(.invalidURL))
             return
@@ -31,8 +31,8 @@ class OpenAIService {
             "messages": [
                 ["role": "user", "content": prompt]
             ],
-            "temperature": 0.7,
-            "max_tokens": 500
+            "temperature": temperature,
+            "max_tokens": maxTokens
         ]
 
         guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
@@ -83,27 +83,53 @@ class OpenAIService {
 
     // Feature-specific methods with tailored prompts
     func compose(inputText: String, completion: @escaping (Result<String, OpenAIError>) -> Void) {
-        let prompt = "Based on this brief input: '\(inputText)', compose a clear, well-written message. Expand on the idea naturally and make it sound professional yet friendly. Only return the composed message, nothing else."
-        complete(prompt: prompt, completion: completion)
+        let prompt = """
+        Take this quick note and turn it into a complete message: '\(inputText)'
+
+        Expand it naturally while keeping the original vibe. Write it in plain English - professional but casual and friendly, like you're texting a colleague.
+
+        IMPORTANT: Don't add greetings (like "Hey [name]"), sign-offs (like "Best, [name]"), or any email formatting. Just return the core message content itself, nothing else.
+        """
+        complete(prompt: prompt, temperature: 0.8, completion: completion)
     }
 
     func polish(inputText: String, completion: @escaping (Result<String, OpenAIError>) -> Void) {
-        let prompt = "Polish this text to make it more professional and well-written: '\(inputText)'. Keep the same meaning but improve clarity, grammar, and tone. Only return the polished text, nothing else."
-        complete(prompt: prompt, completion: completion)
+        let prompt = """
+        Clean up this text: '\(inputText)'
+
+        Fix any grammar issues, improve clarity, and make it sound better while keeping the same meaning and tone. Write it in plain English - professional but casual and conversational.
+
+        IMPORTANT: Don't add greetings, sign-offs, or email formatting. Just improve the existing text as-is and return only that.
+        """
+        complete(prompt: prompt, temperature: 0.5, completion: completion)
     }
 
     func shorten(inputText: String, completion: @escaping (Result<String, OpenAIError>) -> Void) {
-        let prompt = "Make this text more concise while keeping the key message: '\(inputText)'. Only return the shortened text, nothing else."
-        complete(prompt: prompt, completion: completion)
+        let prompt = """
+        Make this way shorter: '\(inputText)'
+
+        Cut out the fluff and get straight to the point. Keep it casual and conversational - plain English that sounds natural.
+
+        IMPORTANT: Don't add greetings, sign-offs, or email formatting. Just return the shortened core message, nothing else.
+        """
+        complete(prompt: prompt, temperature: 0.5, completion: completion)
     }
 
     func explain(inputText: String, completion: @escaping (Result<String, OpenAIError>) -> Void) {
-        let prompt = "Explain this in simple, clear terms: '\(inputText)'. Provide a concise explanation that's easy to understand. Keep it to 2-3 sentences. Only return the explanation, nothing else."
-        complete(prompt: prompt, completion: completion)
+        let prompt = """
+        Explain this in simple terms: '\(inputText)'
+
+        Break it down so anyone can understand it. Use plain, everyday English - casual but clear. Keep it to 2-3 sentences. Just return the explanation, no preamble.
+        """
+        complete(prompt: prompt, maxTokens: 300, completion: completion)
     }
 
     func factCheck(inputText: String, completion: @escaping (Result<String, OpenAIError>) -> Void) {
-        let prompt = "Fact-check this statement: '\(inputText)'. Provide a brief assessment (true/false/partially true) and a short explanation. Keep it concise (2-3 sentences). Only return the fact-check result, nothing else."
-        complete(prompt: prompt, completion: completion)
+        let prompt = """
+        Fact-check this: '\(inputText)'
+
+        Start with your verdict (True/False/Partially True/Misleading), then explain why in 1-2 sentences. Keep it casual and conversational - plain English that's easy to follow. Just return the fact-check, no extra commentary.
+        """
+        complete(prompt: prompt, maxTokens: 300, completion: completion)
     }
 }
