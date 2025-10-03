@@ -910,7 +910,45 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var currentInputText: String?
     private var expandedHeight: CGFloat = 0
     private var collapsedHeight: CGFloat = 0
-    private lazy var openAIService = OpenAIService(apiKey: "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")
+    private lazy var openAIService: OpenAIService = {
+        if let apiKey = Self.loadAPIKey() {
+            return OpenAIService(apiKey: apiKey)
+        } else {
+            // Fallback to hardcoded key temporarily
+            NSLog("WARNING: Using fallback API key")
+            return OpenAIService(apiKey: "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")
+        }
+    }()
+
+    private static func loadAPIKey() -> String? {
+        // For keyboard extensions, we need to use the extension's bundle, not Bundle.main
+        let bundle = Bundle(for: KeyboardViewController.self)
+
+        guard let url = bundle.url(forResource: "Config", withExtension: "plist") else {
+            NSLog("ERROR: Config.plist not found in bundle")
+            NSLog("Bundle path: \(bundle.bundlePath)")
+            NSLog("Bundle resources: \(bundle.paths(forResourcesOfType: "plist", inDirectory: nil))")
+            return nil
+        }
+
+        guard let data = try? Data(contentsOf: url) else {
+            NSLog("ERROR: Could not read Config.plist data")
+            return nil
+        }
+
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+            NSLog("ERROR: Could not parse Config.plist")
+            return nil
+        }
+
+        guard let apiKey = plist["OPENAI_API_KEY"] as? String else {
+            NSLog("ERROR: OPENAI_API_KEY not found in Config.plist")
+            return nil
+        }
+
+        NSLog("Successfully loaded API key from Config.plist")
+        return apiKey
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()

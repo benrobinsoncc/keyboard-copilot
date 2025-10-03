@@ -11,6 +11,7 @@
 		52C1CC5C2E904A4000660581 /* Pow in Frameworks */ = {isa = PBXBuildFile; productRef = 52C1CC5B2E904A4000660581 /* Pow */; };
 		52C1CC5F2E904DA500660581 /* AnimateText in Frameworks */ = {isa = PBXBuildFile; productRef = 52C1CC5E2E904DA500660581 /* AnimateText */; };
 		52C1CC622E90724400660581 /* Vortex in Frameworks */ = {isa = PBXBuildFile; productRef = 52C1CC612E90724400660581 /* Vortex */; };
+		52C1CC642E907F1000660581 /* Config.plist in Resources */ = {isa = PBXBuildFile; fileRef = 52C1CC632E907F1000660581 /* Config.plist */; };
 		52D931792E8DAA2300613204 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = 52D931782E8DAA2300613204 /* KeyboardKit */; };
 		A10000000000000000000040 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000030 /* AppDelegate.swift */; };
 		A10000000000000000000041 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000031 /* SceneDelegate.swift */; };
@@ -49,6 +50,7 @@
 
 /* Begin PBXFileReference section */
 		52C1CC582E9042F300660581 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
+		52C1CC632E907F1000660581 /* Config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Config.plist; sourceTree = "<group>"; };
 		A1000000000000000000001B /* Keyboard Copilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Keyboard Copilot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000023 /* Keyboard Copilot.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; name = "Keyboard Copilot.appex"; path = KeyboardCopilotKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000030 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 		A1000000000000000000000A /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				52C1CC632E907F1000660581 /* Config.plist */,
 				A10000000000000000000036 /* Info.plist */,
 			);
 			path = Resources;
@@ -264,6 +267,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				52C1CC642E907F1000660581 /* Config.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
