@@ -731,9 +731,17 @@ final class KeyboardViewController: KeyboardInputViewController {
         guard let webView = actionState.currentWebView,
               let currentURL = webView.url else { return }
 
-        // Insert the current URL into the text field
+        // Insert the current URL on a new line
         guard let textProxy = textDocumentProxy as? UITextDocumentProxy else { return }
-        textProxy.insertText(currentURL.absoluteString)
+
+        // Check if there's existing text
+        let hasTextBefore = !(textProxy.documentContextBeforeInput?.isEmpty ?? true)
+
+        if hasTextBefore {
+            textProxy.insertText("\n\n" + currentURL.absoluteString)
+        } else {
+            textProxy.insertText(currentURL.absoluteString)
+        }
     }
 
     private func replaceTextWithResponse(_ text: String) {
