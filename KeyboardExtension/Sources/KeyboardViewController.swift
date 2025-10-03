@@ -129,6 +129,7 @@ private struct AnimatedWord: View {
                     .foregroundColor(color)
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -190,17 +191,17 @@ private struct TextResponseView: View {
             // Response text (scrollable) or loading indicator
             ZStack {
                 if actionState.isLoading {
-                    VStack {
+                    VStack(spacing: 8) {
                         Spacer()
                         ProgressView()
                             .scaleEffect(1.2)
-                            .padding()
                         Text("Generating...")
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.gray)
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .offset(y: -8)
                 } else if let responseText = actionState.responseText {
                     ScrollView {
                         BlurredText(
@@ -708,6 +709,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         guard let text = getTextForAction(), !text.isEmpty else { return }
 
         currentActionType = .explain
+        currentWriteActionType = nil
+        currentRewriteActionType = nil
         currentInputText = text
 
         // Show loading state
@@ -751,6 +754,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         guard let text = getTextForAction(), !text.isEmpty else { return }
 
         currentActionType = .factCheck
+        currentWriteActionType = nil
+        currentRewriteActionType = nil
         currentInputText = text
 
         // Show loading state
@@ -793,7 +798,9 @@ final class KeyboardViewController: KeyboardInputViewController {
     private func showCompose() {
         guard let text = getTextForAction(), !text.isEmpty else { return }
 
+        currentActionType = nil
         currentWriteActionType = .compose
+        currentRewriteActionType = nil
         currentInputText = text
 
         // Show loading state
@@ -836,6 +843,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     private func showPolish() {
         guard let text = getTextForAction(), !text.isEmpty else { return }
 
+        currentActionType = nil
+        currentWriteActionType = nil
         currentRewriteActionType = .polish
         currentInputText = text
 
@@ -879,6 +888,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     private func showShorten() {
         guard let text = getTextForAction(), !text.isEmpty else { return }
 
+        currentActionType = nil
+        currentWriteActionType = nil
         currentRewriteActionType = .shorten
         currentInputText = text
 
