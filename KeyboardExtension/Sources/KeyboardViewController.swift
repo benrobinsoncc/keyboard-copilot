@@ -15,6 +15,7 @@ private class CopilotActionState: ObservableObject {
     @Published var isCopied = false
     @Published var isExpanded = true
     @Published var allowsToggle = false
+    @Published var toggleIconState = true // Separate state for icon that updates after animation
 }
 
 private struct WebView: UIViewRepresentable {
@@ -199,6 +200,7 @@ private struct CopilotActionView: View {
     let isCopied: Bool
     let isExpanded: Bool
     let allowsToggle: Bool
+    let toggleIconExpanded: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -262,7 +264,7 @@ private struct CopilotActionView: View {
                     // Show toggle button if available
                     if allowsToggle, let onToggle = onToggle {
                         Button(action: onToggle) {
-                            Image(systemName: isExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+                            Image(systemName: toggleIconExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 32, height: 32)
@@ -359,14 +361,15 @@ private struct CopilotKeyboardView: View {
                     content: content,
                     isCopied: actionState.isCopied,
                     isExpanded: actionState.isExpanded,
-                    allowsToggle: actionState.allowsToggle
+                    allowsToggle: actionState.allowsToggle,
+                    toggleIconExpanded: actionState.toggleIconState
                 )
                 .frame(height: actionState.isExpanded ? actionState.actionViewHeight : nil)
                 .frame(maxHeight: actionState.isExpanded ? nil : .infinity)
                 .clipped()
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
-                .animation(.easeInOut(duration: 0.5), value: actionState.actionViewHeight)
+                .animation(.easeInOut(duration: 0.4), value: actionState.actionViewHeight)
             }
 
             // Spacer to push keyboard to bottom in collapsed state
@@ -707,6 +710,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private func handleToggle() {
+        let wasExpanded = actionState.isExpanded
+
         // Toggle the expanded state
         withAnimation(.easeInOut(duration: 0.4)) {
             actionState.isExpanded.toggle()
@@ -717,6 +722,11 @@ final class KeyboardViewController: KeyboardInputViewController {
             withAnimation(.easeInOut(duration: 0.4)) {
                 actionState.actionViewHeight = expandedHeight - 12 // Subtract padding
             }
+        }
+
+        // Change icon after animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.actionState.toggleIconState = !wasExpanded
         }
         // When collapsed, height is flexible (maxHeight: .infinity) so no need to set fixed height
     }
