@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		52C1CC592E9042F300660581 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C1CC582E9042F300660581 /* OpenAIService.swift */; };
+		52C1CC5C2E904A4000660581 /* Pow in Frameworks */ = {isa = PBXBuildFile; productRef = 52C1CC5B2E904A4000660581 /* Pow */; };
+		52C1CC5F2E904DA500660581 /* AnimateText in Frameworks */ = {isa = PBXBuildFile; productRef = 52C1CC5E2E904DA500660581 /* AnimateText */; };
 		52D931792E8DAA2300613204 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = 52D931782E8DAA2300613204 /* KeyboardKit */; };
 		A10000000000000000000040 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000030 /* AppDelegate.swift */; };
 		A10000000000000000000041 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000031 /* SceneDelegate.swift */; };
@@ -72,6 +74,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				52D931792E8DAA2300613204 /* KeyboardKit in Frameworks */,
+				52C1CC5C2E904A4000660581 /* Pow in Frameworks */,
+				52C1CC5F2E904DA500660581 /* AnimateText in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -232,6 +236,8 @@
 			mainGroup = A10000000000000000000002;
 			packageReferences = (
 				52D931772E8DAA2300613204 /* XCRemoteSwiftPackageReference "KeyboardKit" */,
+				52C1CC5A2E904A4000660581 /* XCRemoteSwiftPackageReference "Pow" */,
+				52C1CC5D2E904DA500660581 /* XCRemoteSwiftPackageReference "AnimateText" */,
 			);
 			productRefGroup = A1000000000000000000000B /* Products */;
 			projectDirPath = "";
@@ -529,6 +535,22 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		52C1CC5A2E904A4000660581 /* XCRemoteSwiftPackageReference "Pow" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/EmergeTools/Pow";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.5;
+			};
+		};
+		52C1CC5D2E904DA500660581 /* XCRemoteSwiftPackageReference "AnimateText" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jasudev/AnimateText";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
 		52D931772E8DAA2300613204 /* XCRemoteSwiftPackageReference "KeyboardKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/KeyboardKit/KeyboardKit";
@@ -540,6 +562,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		52C1CC5B2E904A4000660581 /* Pow */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 52C1CC5A2E904A4000660581 /* XCRemoteSwiftPackageReference "Pow" */;
+			productName = Pow;
+		};
+		52C1CC5E2E904DA500660581 /* AnimateText */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 52C1CC5D2E904DA500660581 /* XCRemoteSwiftPackageReference "AnimateText" */;
+			productName = AnimateText;
+		};
 		52D931782E8DAA2300613204 /* KeyboardKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 52D931772E8DAA2300613204 /* XCRemoteSwiftPackageReference "KeyboardKit" */;

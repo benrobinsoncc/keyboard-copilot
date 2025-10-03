@@ -1,6 +1,15 @@
 {
-  "originHash" : "e73c4125af8b019ecb5e4d8b92ecd0bfbd454ea2065453b96594b17e436333de",
+  "originHash" : "3f138c945b38e28606cd1d73503ae28223736415807209fc28794ec9253a8859",
   "pins" : [
+    {
+      "identity" : "animatetext",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jasudev/AnimateText",
+      "state" : {
+        "revision" : "c55847e03bb3f36cf83cc217fe60ec5feda9ddd6",
+        "version" : "0.5.0"
+      }
+    },
     {
       "identity" : "keyboardkit",
       "kind" : "remoteSourceControl",
@@ -8,6 +17,15 @@
       "state" : {
         "revision" : "f772004fbfa4ba307579640139973f3cc83202c9",
         "version" : "10.0.0"
+      }
+    },
+    {
+      "identity" : "pow",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/EmergeTools/Pow",
+      "state" : {
+        "revision" : "a504eb6d144bcf49f4f33029a2795345cb39e6b4",
+        "version" : "1.0.5"
       }
     }
   ],

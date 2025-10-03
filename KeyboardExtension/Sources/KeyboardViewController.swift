@@ -2,6 +2,8 @@ import KeyboardKit
 import SwiftUI
 import WebKit
 import Combine
+import Pow
+import AnimateText
 
 private class CopilotActionState: ObservableObject {
     @Published var showingActionView = false
@@ -39,10 +41,141 @@ private struct WebView: UIViewRepresentable {
     }
 }
 
+private struct WrappingHStack: Layout {
+    var spacing: CGFloat = 0
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        let height = rows.map { $0.height }.reduce(0, +)
+        return CGSize(width: proposal.width ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        var y = bounds.minY
+
+        for row in rows {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+                x += size.width + spacing
+            }
+            y += row.height
+        }
+    }
+
+    private func computeRows(proposal: ProposedViewSize, subviews: Subviews) -> [(indices: [Int], height: CGFloat)] {
+        var rows: [(indices: [Int], height: CGFloat)] = []
+        var currentRow: [Int] = []
+        var currentX: CGFloat = 0
+        var currentHeight: CGFloat = 0
+        let maxWidth = proposal.width ?? .infinity
+
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > maxWidth && !currentRow.isEmpty {
+                rows.append((currentRow, currentHeight))
+                currentRow = []
+                currentX = 0
+                currentHeight = 0
+            }
+
+            currentRow.append(index)
+            currentX += size.width + spacing
+            currentHeight = max(currentHeight, size.height)
+        }
+
+        if !currentRow.isEmpty {
+            rows.append((currentRow, currentHeight))
+        }
+
+        return rows
+    }
+}
+
+private struct AnimatedCharacter: View {
+    let character: String
+    let index: Int
+    @State private var opacity: Double = 0
+    @State private var blur: CGFloat = 8
+
+    var body: some View {
+        Text(character)
+            .opacity(opacity)
+            .blur(radius: blur)
+            .onAppear {
+                let delay = Double(index) * 0.01
+                withAnimation(.easeOut(duration: 0.2).delay(delay)) {
+                    opacity = 1
+                    blur = 0
+                }
+            }
+    }
+}
+
+private struct AnimatedWord: View {
+    let word: String
+    let startIndex: Int
+    let font: Font
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(word.enumerated()), id: \.offset) { charIndex, char in
+                AnimatedCharacter(character: String(char), index: startIndex + charIndex)
+                    .font(font)
+                    .foregroundColor(color)
+            }
+        }
+    }
+}
+
+private struct BlurredText: View {
+    let text: String
+    let font: Font
+    let color: Color
+
+    private let wordData: [(word: String, startIndex: Int)]
+
+    init(text: String, font: Font, color: Color) {
+        self.text = text
+        self.font = font
+        self.color = color
+
+        // Pre-compute word data once during init
+        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        var charIndex = 0
+        var result: [(word: String, startIndex: Int)] = []
+
+        for word in words {
+            result.append((String(word), charIndex))
+            charIndex += word.count + 1
+        }
+
+        self.wordData = result
+    }
+
+    var body: some View {
+        WrappingHStack(spacing: 0) {
+            ForEach(Array(wordData.enumerated()), id: \.offset) { index, data in
+                HStack(spacing: 0) {
+                    AnimatedWord(word: data.word, startIndex: data.startIndex, font: font, color: color)
+                    if index < wordData.count - 1 {
+                        AnimatedCharacter(character: " ", index: data.startIndex + data.word.count)
+                            .font(font)
+                            .foregroundColor(color)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct TextResponseView: View {
     let headerText: String
-    let responseText: String
-    let isLoading: Bool
+    @ObservedObject var actionState: CopilotActionState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -55,27 +188,33 @@ private struct TextResponseView: View {
                 .padding(.bottom, 8)
 
             // Response text (scrollable) or loading indicator
-            if isLoading {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.2)
-                        .padding()
-                    Text("Generating...")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.gray)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    Text(responseText)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(.primary)
+            ZStack {
+                if actionState.isLoading {
+                    VStack {
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .padding()
+                        Text("Generating...")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let responseText = actionState.responseText {
+                    ScrollView {
+                        BlurredText(
+                            text: responseText,
+                            font: .system(size: 16, weight: .regular),
+                            color: .primary
+                        )
                         .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .id(responseText)
                 }
-                .frame(maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -573,10 +712,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Show loading state
         actionState.isLoading = true
+        actionState.responseText = nil
         let textResponseView = TextResponseView(
             headerText: "Explain",
-            responseText: "",
-            isLoading: true
+            actionState: actionState
         )
 
         showActionView(
@@ -592,28 +731,18 @@ final class KeyboardViewController: KeyboardInputViewController {
         openAIService.explain(inputText: text) { [weak self] result in
             guard let self = self else { return }
 
-            self.actionState.isLoading = false
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    self.actionState.responseText = response
+                    self.actionState.isLoading = false
 
-            switch result {
-            case .success(let response):
-                let updatedView = TextResponseView(
-                    headerText: "Explain",
-                    responseText: response,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(updatedView)
-                self.actionState.responseText = response
-
-            case .failure(let error):
-                let errorMessage = "Failed to generate response. Please try again."
-                NSLog("Explain error: \(error)")
-                let errorView = TextResponseView(
-                    headerText: "Explain",
-                    responseText: errorMessage,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(errorView)
-                self.actionState.responseText = errorMessage
+                case .failure(let error):
+                    let errorMessage = "Failed to generate response. Please try again."
+                    NSLog("Explain error: \(error)")
+                    self.actionState.responseText = errorMessage
+                    self.actionState.isLoading = false
+                }
             }
         }
     }
@@ -626,10 +755,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Show loading state
         actionState.isLoading = true
+        actionState.responseText = nil
         let textResponseView = TextResponseView(
             headerText: "Fact Check",
-            responseText: "",
-            isLoading: true
+            actionState: actionState
         )
 
         showActionView(
@@ -645,28 +774,18 @@ final class KeyboardViewController: KeyboardInputViewController {
         openAIService.factCheck(inputText: text) { [weak self] result in
             guard let self = self else { return }
 
-            self.actionState.isLoading = false
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    self.actionState.responseText = response
+                    self.actionState.isLoading = false
 
-            switch result {
-            case .success(let response):
-                let updatedView = TextResponseView(
-                    headerText: "Fact Check",
-                    responseText: response,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(updatedView)
-                self.actionState.responseText = response
-
-            case .failure(let error):
-                let errorMessage = "Failed to generate response. Please try again."
-                NSLog("Fact Check error: \(error)")
-                let errorView = TextResponseView(
-                    headerText: "Fact Check",
-                    responseText: errorMessage,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(errorView)
-                self.actionState.responseText = errorMessage
+                case .failure(let error):
+                    let errorMessage = "Failed to generate response. Please try again."
+                    NSLog("Fact Check error: \(error)")
+                    self.actionState.responseText = errorMessage
+                    self.actionState.isLoading = false
+                }
             }
         }
     }
@@ -679,10 +798,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Show loading state
         actionState.isLoading = true
+        actionState.responseText = nil
         let textResponseView = TextResponseView(
             headerText: "Compose",
-            responseText: "",
-            isLoading: true
+            actionState: actionState
         )
 
         showActionView(
@@ -698,28 +817,18 @@ final class KeyboardViewController: KeyboardInputViewController {
         openAIService.compose(inputText: text) { [weak self] result in
             guard let self = self else { return }
 
-            self.actionState.isLoading = false
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    self.actionState.responseText = response
+                    self.actionState.isLoading = false
 
-            switch result {
-            case .success(let response):
-                let updatedView = TextResponseView(
-                    headerText: "Compose",
-                    responseText: response,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(updatedView)
-                self.actionState.responseText = response
-
-            case .failure(let error):
-                let errorMessage = "Failed to generate response. Please try again."
-                NSLog("Compose error: \(error)")
-                let errorView = TextResponseView(
-                    headerText: "Compose",
-                    responseText: errorMessage,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(errorView)
-                self.actionState.responseText = errorMessage
+                case .failure(let error):
+                    let errorMessage = "Failed to generate response. Please try again."
+                    NSLog("Compose error: \(error)")
+                    self.actionState.responseText = errorMessage
+                    self.actionState.isLoading = false
+                }
             }
         }
     }
@@ -732,10 +841,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Show loading state
         actionState.isLoading = true
+        actionState.responseText = nil
         let textResponseView = TextResponseView(
             headerText: "Polish",
-            responseText: "",
-            isLoading: true
+            actionState: actionState
         )
 
         showActionView(
@@ -751,28 +860,18 @@ final class KeyboardViewController: KeyboardInputViewController {
         openAIService.polish(inputText: text) { [weak self] result in
             guard let self = self else { return }
 
-            self.actionState.isLoading = false
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    self.actionState.responseText = response
+                    self.actionState.isLoading = false
 
-            switch result {
-            case .success(let response):
-                let updatedView = TextResponseView(
-                    headerText: "Polish",
-                    responseText: response,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(updatedView)
-                self.actionState.responseText = response
-
-            case .failure(let error):
-                let errorMessage = "Failed to generate response. Please try again."
-                NSLog("Polish error: \(error)")
-                let errorView = TextResponseView(
-                    headerText: "Polish",
-                    responseText: errorMessage,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(errorView)
-                self.actionState.responseText = errorMessage
+                case .failure(let error):
+                    let errorMessage = "Failed to generate response. Please try again."
+                    NSLog("Polish error: \(error)")
+                    self.actionState.responseText = errorMessage
+                    self.actionState.isLoading = false
+                }
             }
         }
     }
@@ -785,10 +884,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         // Show loading state
         actionState.isLoading = true
+        actionState.responseText = nil
         let textResponseView = TextResponseView(
             headerText: "Shorten",
-            responseText: "",
-            isLoading: true
+            actionState: actionState
         )
 
         showActionView(
@@ -804,28 +903,18 @@ final class KeyboardViewController: KeyboardInputViewController {
         openAIService.shorten(inputText: text) { [weak self] result in
             guard let self = self else { return }
 
-            self.actionState.isLoading = false
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    self.actionState.responseText = response
+                    self.actionState.isLoading = false
 
-            switch result {
-            case .success(let response):
-                let updatedView = TextResponseView(
-                    headerText: "Shorten",
-                    responseText: response,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(updatedView)
-                self.actionState.responseText = response
-
-            case .failure(let error):
-                let errorMessage = "Failed to generate response. Please try again."
-                NSLog("Shorten error: \(error)")
-                let errorView = TextResponseView(
-                    headerText: "Shorten",
-                    responseText: errorMessage,
-                    isLoading: false
-                )
-                self.actionState.actionViewContent = AnyView(errorView)
-                self.actionState.responseText = errorMessage
+                case .failure(let error):
+                    let errorMessage = "Failed to generate response. Please try again."
+                    NSLog("Shorten error: \(error)")
+                    self.actionState.responseText = errorMessage
+                    self.actionState.isLoading = false
+                }
             }
         }
     }
