@@ -164,7 +164,7 @@ private struct CopilotActionBar: View {
                 Label("Fact check", systemImage: "checkmark.shield")
             }
         } label: {
-            pillLabel(symbol: "magnifyingglass", title: "Search")
+            pillLabel(symbol: "magnifyingglass", title: "Ask")
         }
         .menuOrder(.fixed)
         .menuStyle(.borderlessButton)
@@ -352,34 +352,29 @@ private struct CopilotKeyboardView: View {
                         } else if let responseText = actionState.responseText {
                             onInsertText?(responseText)
                         }
-                        withAnimation(.easeInOut(duration: 0.4)) {
-                            actionState.actionViewHeight = 0
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            actionState.showingActionView = false
-                            actionState.actionViewContent = nil
-                            actionState.currentURL = nil
-                            actionState.responseText = nil
-                            actionState.growFromBottom = false
-                            actionState.isExpanded = true
-                            actionState.allowsToggle = false
-                            actionState.currentWebView = nil
-                        }
+
+                        // Hide action view immediately to show keyboard
+                        actionState.showingActionView = false
+                        actionState.actionViewContent = nil
+                        actionState.currentURL = nil
+                        actionState.responseText = nil
+                        actionState.growFromBottom = false
+                        actionState.isExpanded = true
+                        actionState.allowsToggle = false
+                        actionState.currentWebView = nil
+                        actionState.actionViewHeight = 0
                     },
                     onCancel: {
-                        withAnimation(.easeInOut(duration: 0.4)) {
-                            actionState.actionViewHeight = 0
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            actionState.showingActionView = false
-                            actionState.actionViewContent = nil
-                            actionState.currentURL = nil
-                            actionState.responseText = nil
-                            actionState.growFromBottom = false
-                            actionState.isExpanded = true
-                            actionState.allowsToggle = false
-                            actionState.currentWebView = nil
-                        }
+                        // Hide action view immediately to show keyboard
+                        actionState.showingActionView = false
+                        actionState.actionViewContent = nil
+                        actionState.currentURL = nil
+                        actionState.responseText = nil
+                        actionState.growFromBottom = false
+                        actionState.isExpanded = true
+                        actionState.allowsToggle = false
+                        actionState.currentWebView = nil
+                        actionState.actionViewHeight = 0
                     },
                     onReload: onReload,
                     onCopy: actionState.responseText != nil ? onCopy : nil,
@@ -440,6 +435,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     private let actionState = CopilotActionState()
     private var heightConstraint: NSLayoutConstraint?
     private var currentActionType: CopilotSearchAction?
+    private var currentWriteActionType: CopilotWriteAction?
+    private var currentRewriteActionType: CopilotRewriteAction?
     private var currentInputText: String?
     private var expandedHeight: CGFloat = 0
     private var collapsedHeight: CGFloat = 0
@@ -502,10 +499,28 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     private func handleWriteSelection(_ action: CopilotWriteAction) {
         NSLog("Selected write action: \(action.rawValue)")
+
+        switch action {
+        case .compose:
+            showCompose()
+        case .rewrite:
+            // Rewrite is handled by handleRewriteSelection
+            NSLog("Rewrite submenu selected")
+        case .shortcuts:
+            // TODO: Implement shortcuts
+            NSLog("Shortcuts not yet implemented")
+        }
     }
 
     private func handleRewriteSelection(_ action: CopilotRewriteAction) {
         NSLog("Selected rewrite action: \(action.rawValue)")
+
+        switch action {
+        case .polish:
+            showPolish()
+        case .shorten:
+            showShorten()
+        }
     }
 
     private func handleSearchSelection(_ action: CopilotSearchAction) {
@@ -576,6 +591,78 @@ final class KeyboardViewController: KeyboardInputViewController {
             buttonText: "Insert",
             buttonIcon: "checkmark.circle",
             responseText: placeholderResponse,
+            expandHeight: false,
+            growFromBottom: true
+        )
+    }
+
+    private func showCompose() {
+        guard let text = getTextForAction(), !text.isEmpty else { return }
+
+        currentWriteActionType = .compose
+        currentInputText = text
+
+        // Mock response for now
+        let mockResponse = "I'd like to schedule a meeting with you tomorrow. Would you be available to discuss our upcoming project and next steps?"
+
+        let textResponseView = TextResponseView(
+            headerText: "Compose",
+            responseText: mockResponse
+        )
+
+        showActionView(
+            content: AnyView(textResponseView),
+            buttonText: "Insert",
+            buttonIcon: "checkmark.circle",
+            responseText: mockResponse,
+            expandHeight: false,
+            growFromBottom: true
+        )
+    }
+
+    private func showPolish() {
+        guard let text = getTextForAction(), !text.isEmpty else { return }
+
+        currentRewriteActionType = .polish
+        currentInputText = text
+
+        // Mock response for now
+        let mockResponse = "Could you please send me the file at your earliest convenience? I would greatly appreciate it."
+
+        let textResponseView = TextResponseView(
+            headerText: "Polish",
+            responseText: mockResponse
+        )
+
+        showActionView(
+            content: AnyView(textResponseView),
+            buttonText: "Insert",
+            buttonIcon: "checkmark.circle",
+            responseText: mockResponse,
+            expandHeight: false,
+            growFromBottom: true
+        )
+    }
+
+    private func showShorten() {
+        guard let text = getTextForAction(), !text.isEmpty else { return }
+
+        currentRewriteActionType = .shorten
+        currentInputText = text
+
+        // Mock response for now
+        let mockResponse = "Can you help with this task when free?"
+
+        let textResponseView = TextResponseView(
+            headerText: "Shorten",
+            responseText: mockResponse
+        )
+
+        showActionView(
+            content: AnyView(textResponseView),
+            buttonText: "Insert",
+            buttonIcon: "checkmark.circle",
+            responseText: mockResponse,
             expandHeight: false,
             growFromBottom: true
         )
@@ -674,38 +761,100 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
-        // Otherwise, handle text response reloading
-        guard let actionType = currentActionType else { return }
-
-        // Generate a different placeholder response
-        let alternativeResponses: [CopilotSearchAction: [String]] = [
-            .explain: [
-                "Metacognition is the process of thinking about your own thinking. It involves being aware of how you learn, plan, and solve problems, and adjusting your strategies to improve outcomes.",
-                "Metacognition refers to awareness and understanding of one's own thought processes. It's essentially 'thinking about thinking' - monitoring how you learn and adapt your strategies accordingly.",
-                "In simple terms, metacognition is your ability to observe and analyze your own mental processes, helping you become more effective at learning and problem-solving."
-            ],
-            .factCheck: [
-                "Mostly false. While coffee has a mild diuretic effect, studies show it doesn't cause dehydration when consumed in normal amounts. Regular coffee drinkers adapt, and it still contributes to daily fluid intake.",
-                "False. Research indicates that moderate coffee consumption doesn't lead to dehydration. The body adapts to regular caffeine intake, and coffee contributes to overall hydration.",
-                "Not true. While coffee is a mild diuretic, it doesn't cause significant dehydration. Studies show that coffee counts toward daily fluid intake for regular drinkers."
+        // Handle text response reloading for search actions
+        if let actionType = currentActionType {
+            let alternativeResponses: [CopilotSearchAction: [String]] = [
+                .explain: [
+                    "Metacognition is the process of thinking about your own thinking. It involves being aware of how you learn, plan, and solve problems, and adjusting your strategies to improve outcomes.",
+                    "Metacognition refers to awareness and understanding of one's own thought processes. It's essentially 'thinking about thinking' - monitoring how you learn and adapt your strategies accordingly.",
+                    "In simple terms, metacognition is your ability to observe and analyze your own mental processes, helping you become more effective at learning and problem-solving."
+                ],
+                .factCheck: [
+                    "Mostly false. While coffee has a mild diuretic effect, studies show it doesn't cause dehydration when consumed in normal amounts. Regular coffee drinkers adapt, and it still contributes to daily fluid intake.",
+                    "False. Research indicates that moderate coffee consumption doesn't lead to dehydration. The body adapts to regular caffeine intake, and coffee contributes to overall hydration.",
+                    "Not true. While coffee is a mild diuretic, it doesn't cause significant dehydration. Studies show that coffee counts toward daily fluid intake for regular drinkers."
+                ]
             ]
-        ]
 
-        // Get next response (cycle through alternatives)
-        if let responses = alternativeResponses[actionType] {
-            let currentResponse = actionState.responseText ?? ""
-            if let currentIndex = responses.firstIndex(of: currentResponse) {
-                let nextIndex = (currentIndex + 1) % responses.count
-                let newResponse = responses[nextIndex]
+            if let responses = alternativeResponses[actionType] {
+                let currentResponse = actionState.responseText ?? ""
+                if let currentIndex = responses.firstIndex(of: currentResponse) {
+                    let nextIndex = (currentIndex + 1) % responses.count
+                    let newResponse = responses[nextIndex]
 
-                // Update the view
-                let textResponseView = TextResponseView(
-                    headerText: actionType == .explain ? "Explain" : "Fact Check",
-                    responseText: newResponse
-                )
+                    let textResponseView = TextResponseView(
+                        headerText: actionType == .explain ? "Explain" : "Fact Check",
+                        responseText: newResponse
+                    )
 
-                actionState.actionViewContent = AnyView(textResponseView)
-                actionState.responseText = newResponse
+                    actionState.actionViewContent = AnyView(textResponseView)
+                    actionState.responseText = newResponse
+                }
+            }
+        }
+
+        // Handle text response reloading for write actions (Compose)
+        if let writeActionType = currentWriteActionType {
+            let alternativeResponses: [CopilotWriteAction: [String]] = [
+                .compose: [
+                    "I'd like to schedule a meeting with you tomorrow. Would you be available to discuss our upcoming project and next steps?",
+                    "Could we meet tomorrow? I'd appreciate the opportunity to go over the project details with you.",
+                    "Would you have time for a meeting tomorrow? I'd like to discuss the project and get your input on our approach."
+                ]
+            ]
+
+            if let responses = alternativeResponses[writeActionType] {
+                let currentResponse = actionState.responseText ?? ""
+                if let currentIndex = responses.firstIndex(of: currentResponse) {
+                    let nextIndex = (currentIndex + 1) % responses.count
+                    let newResponse = responses[nextIndex]
+
+                    let textResponseView = TextResponseView(
+                        headerText: "Compose",
+                        responseText: newResponse
+                    )
+
+                    actionState.actionViewContent = AnyView(textResponseView)
+                    actionState.responseText = newResponse
+                }
+            }
+        }
+
+        // Handle text response reloading for rewrite actions (Polish/Shorten)
+        if let rewriteActionType = currentRewriteActionType {
+            let alternativeResponses: [CopilotRewriteAction: [String]] = [
+                .polish: [
+                    "Could you please send me the file at your earliest convenience? I would greatly appreciate it.",
+                    "I would be grateful if you could send me the file when you have a moment. Thank you in advance.",
+                    "Would you mind sending me the file when it's convenient for you? I'd really appreciate your help."
+                ],
+                .shorten: [
+                    "Can you help with this task when free?",
+                    "Help with this when available?",
+                    "Need help with this task - got time?"
+                ]
+            ]
+
+            if let responses = alternativeResponses[rewriteActionType] {
+                let currentResponse = actionState.responseText ?? ""
+                if let currentIndex = responses.firstIndex(of: currentResponse) {
+                    let nextIndex = (currentIndex + 1) % responses.count
+                    let newResponse = responses[nextIndex]
+
+                    let headerText: String
+                    switch rewriteActionType {
+                    case .polish: headerText = "Polish"
+                    case .shorten: headerText = "Shorten"
+                    }
+
+                    let textResponseView = TextResponseView(
+                        headerText: headerText,
+                        responseText: newResponse
+                    )
+
+                    actionState.actionViewContent = AnyView(textResponseView)
+                    actionState.responseText = newResponse
+                }
             }
         }
     }
@@ -747,22 +896,15 @@ final class KeyboardViewController: KeyboardInputViewController {
     private func replaceTextWithResponse(_ text: String) {
         guard let textProxy = textDocumentProxy as? UITextDocumentProxy else { return }
 
-        // Delete all existing text
-        if let contextBefore = textProxy.documentContextBeforeInput {
-            for _ in 0..<contextBefore.count {
-                textProxy.deleteBackward()
-            }
-        }
+        // For now, just insert with line breaks instead of deleting
+        // (Deleting can cause freezes with large amounts of text)
+        let hasTextBefore = !(textProxy.documentContextBeforeInput?.isEmpty ?? true)
 
-        if let contextAfter = textProxy.documentContextAfterInput {
-            // Delete text after cursor by moving forward and deleting
-            for _ in 0..<contextAfter.count {
-                textProxy.deleteBackward()
-            }
+        if hasTextBefore {
+            textProxy.insertText("\n\n" + text)
+        } else {
+            textProxy.insertText(text)
         }
-
-        // Insert the new text
-        textProxy.insertText(text)
     }
 
     private func handleToggle() {
