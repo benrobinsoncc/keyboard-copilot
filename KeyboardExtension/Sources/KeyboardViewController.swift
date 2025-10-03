@@ -4,6 +4,7 @@ import WebKit
 import Combine
 import Pow
 import AnimateText
+import Vortex
 
 private class CopilotActionState: ObservableObject {
     @Published var showingActionView = false
@@ -21,6 +22,7 @@ private class CopilotActionState: ObservableObject {
     @Published var isLoading = false
     @Published var isReloading = false
     @Published var shouldAnimateHeight = false // Only animate height for webview
+    @Published var showFireflies = false // Trigger fireflies dissolve effect
     var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
@@ -314,7 +316,7 @@ private struct TextResponseView: View {
 
             // Response text (scrollable) or loading indicator
             ZStack {
-                if actionState.isLoading {
+                if actionState.isLoading && !actionState.showFireflies {
                     VStack(spacing: 8) {
                         Spacer()
                         ProgressView()
@@ -339,6 +341,19 @@ private struct TextResponseView: View {
                     }
                     .frame(maxHeight: .infinity)
                     .id(responseText)
+                    .opacity(actionState.showFireflies ? 0 : 1)
+                }
+
+                // Fireflies dissolve effect overlay
+                if actionState.showFireflies {
+                    VortexView(.fireflies) {
+                        Circle()
+                            .fill(.primary.opacity(0.3))  // Color with transparency
+                            .frame(width: 24, height: 16)
+                            .blur(radius: 3)
+                            .tag("circle")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -1200,10 +1215,18 @@ final class KeyboardViewController: KeyboardInputViewController {
             self.actionState.isReloading = false
         }
 
-        // If there's a web view, reload it
+        // If there's a web view, reload it (no fireflies for webview)
         if let webView = actionState.currentWebView {
             webView.reload()
             return
+        }
+
+        // Trigger fireflies dissolve effect
+        actionState.showFireflies = true
+
+        // After 2 seconds, hide fireflies and show loading if API hasn't responded
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.actionState.showFireflies = false
         }
 
         // Re-call the API for the current action with the stored input text
