@@ -119,6 +119,7 @@ private class CopilotActionState: ObservableObject {
     @Published var shouldAnimateHeight = false // Only animate height for webview
     @Published var showFireflies = false // Trigger fireflies dissolve effect
     @Published var showFollowupButton = false // Show followup button for Explain action
+    @Published var invertedToggle = false // For ChatGPT: expanded=no keyboard, collapsed=keyboard shown
     var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
@@ -707,11 +708,21 @@ private struct CopilotActionView: View {
 
                     // Show toggle button if available
                     if allowsToggle, let onToggle = onToggle {
+                        let iconName: String = {
+                            if actionState.invertedToggle {
+                                // For ChatGPT: compress = expand (show keyboard), expand = compress (hide keyboard)
+                                return toggleIconExpanded ? "rectangle.expand.vertical" : "rectangle.compress.vertical"
+                            } else {
+                                // For Google: normal behavior
+                                return toggleIconExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
+                            }
+                        }()
+
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             onToggle()
                         }) {
-                            Image(systemName: toggleIconExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+                            Image(systemName: iconName)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 32, height: 32)
@@ -838,6 +849,7 @@ private struct CopilotKeyboardView: View {
                         actionState.currentWebView = nil
                         actionState.actionViewHeight = 0
                         actionState.showFollowupButton = false
+                        actionState.invertedToggle = false
                     },
                     onReload: onReload,
                     onCopy: (actionState.responseText != nil || actionState.isLoading) ? onCopy : nil,
@@ -852,17 +864,11 @@ private struct CopilotKeyboardView: View {
                     isSpeaking: speechManager.isSpeaking,
                     actionState: actionState
                 )
-                .frame(height: actionState.isExpanded ? actionState.actionViewHeight : nil)
-                .frame(maxHeight: actionState.isExpanded ? nil : .infinity)
+                .frame(height: actionState.actionViewHeight)
                 .clipped()
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
                 .animation(actionState.shouldAnimateHeight ? .easeInOut(duration: 0.4) : nil, value: actionState.actionViewHeight)
-            }
-
-            // Spacer to push keyboard to bottom in collapsed state
-            if actionState.showingActionView && !actionState.isExpanded {
-                Spacer(minLength: 0)
             }
 
             // Keyboard view (visible when not showing action view, or when collapsed)
@@ -1077,6 +1083,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.isLoading = true
         actionState.responseText = nil
         actionState.showFollowupButton = true
+        actionState.invertedToggle = true
         let textResponseView = TextResponseView(
             headerText: "ChatGPT",
             actionState: actionState
@@ -1088,7 +1095,8 @@ final class KeyboardViewController: KeyboardInputViewController {
             buttonIcon: "",
             responseText: nil,
             expandHeight: false,
-            growFromBottom: true
+            growFromBottom: true,
+            allowsToggle: true
         )
 
         // Call OpenAI API
@@ -1256,6 +1264,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.growFromBottom = growFromBottom
         actionState.allowsToggle = allowsToggle
         actionState.isExpanded = true // Always start in expanded state
+        actionState.toggleIconState = true // Reset icon state to match expanded state
         actionState.shouldAnimateHeight = expandHeight // Only animate for webview
 
         // Calculate heights
@@ -1317,6 +1326,9 @@ final class KeyboardViewController: KeyboardInputViewController {
               let searchURL = URL(string: "https://www.google.com/search?q=\(encodedQuery)") else {
             return
         }
+
+        // Reset inverted toggle for Google (normal behavior)
+        actionState.invertedToggle = false
 
         let webView = WebView(url: searchURL) { [weak self] webView in
             self?.actionState.currentWebView = webView
@@ -1448,10 +1460,21 @@ final class KeyboardViewController: KeyboardInputViewController {
             actionState.isExpanded.toggle()
         }
 
-        // Update action view height for expanded state
-        if actionState.isExpanded {
-            withAnimation(.easeInOut(duration: 0.4)) {
-                actionState.actionViewHeight = expandedHeight - 6 // Subtract top padding
+        if actionState.invertedToggle {
+            // For ChatGPT: action container height stays the same, only keyboard visibility changes
+            // No height changes needed - just toggle keyboard visibility via isExpanded
+        } else {
+            // For Google/webview: webview height needs to change to accommodate keyboard
+            if actionState.isExpanded {
+                // Going to expanded (hide keyboard) - webview takes full height
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    actionState.actionViewHeight = expandedHeight - 6 // Subtract top padding
+                }
+            } else {
+                // Going to collapsed (show keyboard) - webview shrinks to make room
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    actionState.actionViewHeight = collapsedHeight - 6 // Subtract top padding
+                }
             }
         }
 
@@ -1459,7 +1482,6 @@ final class KeyboardViewController: KeyboardInputViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             self.actionState.toggleIconState = !wasExpanded
         }
-        // When collapsed, height is flexible (maxHeight: .infinity) so no need to set fixed height
     }
 
     private func openURL(_ url: URL) {
