@@ -136,4 +136,45 @@ class OpenAIService {
         """
         complete(prompt: prompt, maxTokens: 300, completion: completion)
     }
+
+    // Async method for chat completion with full conversation history
+    func getChatCompletion(messages: [[String: String]]) async throws -> String {
+        guard let url = URL(string: baseURL) else {
+            throw OpenAIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "model": "gpt-4o-mini",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 500
+        ]
+
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
+            throw OpenAIError.invalidResponse
+        }
+
+        request.httpBody = httpBody
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+
+        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let choices = json["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            return content
+        } else if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let error = json["error"] as? [String: Any],
+                  let message = error["message"] as? String {
+            throw OpenAIError.apiError(message)
+        } else {
+            throw OpenAIError.invalidResponse
+        }
+    }
 }

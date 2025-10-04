@@ -122,8 +122,13 @@ private class CopilotActionState: ObservableObject {
     @Published var invertedToggle = false // For ChatGPT: expanded=no keyboard, collapsed=keyboard shown
     @Published var isInFollowupMode = false // Track if user is composing a followup message
     @Published var followupMessage = "" // The user's followup message text
+    @Published var isLoadingFollowup = false // Track if followup request is loading
+    @Published var lastAnimatedMessageIndex = -1 // Track the last message index that was animated
+    @Published var shouldScrollToBottom = false // Trigger for scrolling to new messages
     var currentWebView: WKWebView? // Reference to current web view for reload
     var savedTextSelection: (before: String?, after: String?)? // Saved cursor position when entering followup mode
+    var conversationHistory: [[String: String]] = [] // Array of messages: [{"role": "user"/"assistant", "content": "..."}]
+    var followupTask: Task<Void, Never>? // Reference to current followup task for cancellation
 }
 
 private struct WebView: UIViewRepresentable {
@@ -234,6 +239,111 @@ private struct AnimatedWord: View {
             }
         }
         .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private struct StaticFormattedText: View {
+    let text: String
+    let font: Font
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(text.components(separatedBy: .newlines).enumerated()), id: \.offset) { _, line in
+                if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Spacer()
+                        .frame(height: 0)
+                } else {
+                    StaticFormattedLine(line: line, font: font, color: color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct StaticFormattedLine: View {
+    let line: String
+    let font: Font
+    let color: Color
+
+    private let wordData: [(word: String, isBold: Bool)]
+    private let isHeader: Bool
+
+    init(line: String, font: Font, color: Color) {
+        self.line = line
+        self.font = font
+        self.color = color
+
+        // Check if line starts with ### (header)
+        var processedLine = line
+        if line.hasPrefix("### ") {
+            processedLine = String(line.dropFirst(4))
+            self.isHeader = true
+        } else if line.hasPrefix("##") {
+            processedLine = String(line.dropFirst(3))
+            self.isHeader = true
+        } else if line.hasPrefix("#") {
+            processedLine = String(line.dropFirst(2))
+            self.isHeader = true
+        } else {
+            self.isHeader = false
+        }
+
+        // Parse markdown bold (**text**)
+        var result: [(word: String, isBold: Bool)] = []
+        var remainingText = processedLine
+
+        while !remainingText.isEmpty {
+            if let boldRange = remainingText.range(of: "\\*\\*([^*]+)\\*\\*", options: .regularExpression) {
+                // Add words before bold
+                let beforeBold = String(remainingText[..<boldRange.lowerBound])
+                if !beforeBold.isEmpty {
+                    let words = beforeBold.split(separator: " ", omittingEmptySubsequences: false)
+                    for word in words {
+                        result.append((String(word), false))
+                    }
+                }
+
+                // Add bold text words (remove the ** markers)
+                let boldWithMarkers = String(remainingText[boldRange])
+                let boldText = String(boldWithMarkers.dropFirst(2).dropLast(2))
+                let boldWords = boldText.split(separator: " ", omittingEmptySubsequences: false)
+                for word in boldWords {
+                    result.append((String(word), true))
+                }
+
+                // Move to remaining text
+                remainingText = String(remainingText[boldRange.upperBound...])
+            } else {
+                // No more bold text, add remaining words as regular
+                let words = remainingText.split(separator: " ", omittingEmptySubsequences: false)
+                for word in words {
+                    result.append((String(word), false))
+                }
+                break
+            }
+        }
+
+        self.wordData = result
+    }
+
+    var body: some View {
+        WrappingHStack(spacing: 0) {
+            ForEach(Array(wordData.enumerated()), id: \.offset) { index, data in
+                HStack(spacing: 0) {
+                    Text(data.word)
+                        .font((isHeader || data.isBold) ? font.weight(.semibold) : font)
+                        .foregroundColor(color)
+                    if index < wordData.count - 1 {
+                        Text(" ")
+                            .font((isHeader || data.isBold) ? font.weight(.semibold) : font)
+                            .foregroundColor(color)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -429,23 +539,65 @@ private struct TextResponseView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .offset(y: -8)
-                } else if let responseText = actionState.responseText {
+                } else if !actionState.conversationHistory.isEmpty {
+                    // Show conversation history for ChatGPT (has followup functionality)
                     ScrollViewReader { proxy in
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
-                                // AI response
-                                BlurredText(
-                                    text: responseText,
-                                    font: .system(size: 16, weight: .regular),
-                                    color: .primary
-                                )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
+                                // Show all messages in conversation history
+                                ForEach(Array(actionState.conversationHistory.enumerated()), id: \.offset) { index, message in
+                                    if let role = message["role"], let content = message["content"] {
+                                        if role == "assistant" {
+                                            // AI message - left aligned with animation for new messages
+                                            if index > actionState.lastAnimatedMessageIndex {
+                                                BlurredText(
+                                                    text: content,
+                                                    font: .system(size: 16, weight: .regular),
+                                                    color: .primary
+                                                )
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal, 16)
+                                                .id(index)
+                                                .onAppear {
+                                                    actionState.lastAnimatedMessageIndex = index
+                                                }
+                                            } else {
+                                                // Already animated - show formatted text without animation
+                                                StaticFormattedText(
+                                                    text: content,
+                                                    font: .system(size: 16, weight: .regular),
+                                                    color: .primary
+                                                )
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal, 16)
+                                                .id(index)
+                                            }
+                                        } else {
+                                            // User message - right aligned in bubble
+                                            HStack(alignment: .top, spacing: 0) {
+                                                Spacer(minLength: 0)
+                                                Text(content)
+                                                    .font(.system(size: 16, weight: .regular))
+                                                    .foregroundColor(.primary)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 8)
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                                            .fill(Color.gray.opacity(0.1))
+                                                    )
+                                                    .frame(maxWidth: 300, alignment: .trailing)
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .trailing)
+                                            .padding(.trailing, 12)
+                                            .id(index)
+                                        }
+                                    }
+                                }
 
-                                // User's followup message bubble (if in followup mode AND followup is available) - below AI response, on right
+                                // Show current followup message being typed (if in followup mode)
                                 if actionState.isInFollowupMode && actionState.showFollowupButton {
-                                    HStack {
-                                        Spacer()
+                                    HStack(alignment: .top, spacing: 0) {
+                                        Spacer(minLength: 0)
                                         Text(actionState.followupMessage.isEmpty ? "Type followup..." : actionState.followupMessage)
                                             .font(.system(size: 16, weight: .regular))
                                             .foregroundColor(actionState.followupMessage.isEmpty ? .gray : .primary)
@@ -455,10 +607,12 @@ private struct TextResponseView: View {
                                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                                                     .fill(Color.gray.opacity(0.1))
                                             )
+                                            .frame(maxWidth: 300, alignment: .trailing)
                                     }
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
                                     .padding(.trailing, 12)
                                     .padding(.bottom, 12)
-                                    .id("followupBubble") // Add ID for scrolling
+                                    .id("followupBubble")
                                 }
                             }
                             .padding(.bottom, 12)
@@ -471,8 +625,33 @@ private struct TextResponseView: View {
                                 }
                             }
                         }
+                        .onChange(of: actionState.shouldScrollToBottom) { shouldScroll in
+                            if shouldScroll, let lastIndex = actionState.conversationHistory.indices.last {
+                                // Scroll to the new AI message position with smooth animation
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    proxy.scrollTo(lastIndex, anchor: .top)
+                                }
+                                // Reset the trigger
+                                DispatchQueue.main.async {
+                                    actionState.shouldScrollToBottom = false
+                                }
+                            }
+                        }
                     }
-                    .id(responseText)
+                    .opacity(actionState.showFireflies ? 0 : 1)
+                } else if let responseText = actionState.responseText, !responseText.isEmpty {
+                    // Show response text for compose/polish/shorten (non-chat responses)
+                    ScrollView {
+                        BlurredText(
+                            text: responseText,
+                            font: .system(size: 16, weight: .regular),
+                            color: .primary
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                    }
+                    .frame(maxHeight: .infinity)
                     .opacity(actionState.showFireflies ? 0 : 1)
                 }
 
@@ -792,7 +971,8 @@ private struct CopilotActionView: View {
                     if actionState.showFollowupButton, let onFollowup = onFollowup {
                         let isInFollowupMode = actionState.isInFollowupMode
                         let hasText = !actionState.followupMessage.isEmpty
-                        let buttonText = isInFollowupMode ? "Ask" : "Followup"
+                        // Show "Stop" when loading, "Ask" in followup mode, otherwise "Followup"
+                        let buttonText = actionState.isLoadingFollowup ? "Stop" : (isInFollowupMode ? "Ask" : "Followup")
                         let buttonIcon = isInFollowupMode ? "arrow.up.circle" : "arrowshape.turn.up.left"
                         let isDisabled = isInFollowupMode && !hasText
 
@@ -801,20 +981,26 @@ private struct CopilotActionView: View {
                             onFollowup()
                         }) {
                             HStack(spacing: 6) {
-                                Image(systemName: buttonIcon)
-                                    .font(.system(size: 12, weight: .semibold))
+                                if actionState.isLoadingFollowup {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: buttonIcon)
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
                                 Text(buttonText)
                                     .font(.system(size: 15, weight: .regular))
                             }
-                            .foregroundColor(isInFollowupMode && hasText ? .white : (isDisabled ? .primary.opacity(0.3) : .primary))
+                            .foregroundColor((isInFollowupMode && hasText) || actionState.isLoadingFollowup ? .white : (isDisabled ? .primary.opacity(0.3) : .primary))
                             .padding(.horizontal, 12)
                             .frame(height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(isInFollowupMode && hasText ? Color.black : Color.gray.opacity(0.1))
+                                    .fill((isInFollowupMode && hasText) || actionState.isLoadingFollowup ? Color.black : Color.gray.opacity(0.1))
                             )
                         }
-                        .disabled(isDisabled)
+                        .disabled(isDisabled && !actionState.isLoadingFollowup)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -891,6 +1077,7 @@ private struct CopilotKeyboardView: View {
                         actionState.invertedToggle = false
                         actionState.isInFollowupMode = false
                         actionState.followupMessage = ""
+                        actionState.conversationHistory = []
                         onStopTextSync?()
                     },
                     onReload: onReload,
@@ -1166,6 +1353,11 @@ final class KeyboardViewController: KeyboardInputViewController {
             allowsToggle: true
         )
 
+        // Initialize conversation history with user's question
+        actionState.conversationHistory = [
+            ["role": "user", "content": text]
+        ]
+
         // Call OpenAI API
         openAIService.explain(inputText: text) { [weak self] result in
             guard let self = self else { return }
@@ -1173,6 +1365,12 @@ final class KeyboardViewController: KeyboardInputViewController {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let response):
+                    // Add assistant response to conversation history
+                    self.actionState.conversationHistory.append([
+                        "role": "assistant",
+                        "content": response
+                    ])
+
                     self.actionState.responseText = response
                     self.actionState.isLoading = false
 
@@ -1199,6 +1397,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.responseText = nil
         actionState.showFollowupButton = false
         actionState.isInFollowupMode = false
+        actionState.conversationHistory = []
+        actionState.lastAnimatedMessageIndex = -1
         let textResponseView = TextResponseView(
             headerText: "Compose",
             actionState: actionState
@@ -1246,6 +1446,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.responseText = nil
         actionState.showFollowupButton = false
         actionState.isInFollowupMode = false
+        actionState.conversationHistory = []
+        actionState.lastAnimatedMessageIndex = -1
         let textResponseView = TextResponseView(
             headerText: "Polish",
             actionState: actionState
@@ -1293,6 +1495,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.responseText = nil
         actionState.showFollowupButton = false
         actionState.isInFollowupMode = false
+        actionState.conversationHistory = []
+        actionState.lastAnimatedMessageIndex = -1
         let textResponseView = TextResponseView(
             headerText: "Shorten",
             actionState: actionState
@@ -1507,7 +1711,19 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private func handleFollowup() {
-        // Toggle followup mode
+        // If loading, cancel the request
+        if actionState.isLoadingFollowup {
+            cancelFollowupRequest()
+            return
+        }
+
+        // If already in followup mode and has text, send the API request
+        if actionState.isInFollowupMode && !actionState.followupMessage.isEmpty {
+            sendFollowupRequest()
+            return
+        }
+
+        // Otherwise, enter followup mode
         actionState.isInFollowupMode = true
 
         // Clear the app's text field so followup bubble starts empty
@@ -1541,6 +1757,81 @@ final class KeyboardViewController: KeyboardInputViewController {
         }
 
         NSLog("Followup mode activated with text sync timer")
+    }
+
+    private func sendFollowupRequest() {
+        guard !actionState.followupMessage.isEmpty else { return }
+
+        // Add user's followup message to conversation history
+        actionState.conversationHistory.append([
+            "role": "user",
+            "content": actionState.followupMessage
+        ])
+
+        NSLog("📤 Sending followup request with \(actionState.conversationHistory.count) messages")
+
+        // Clear followup message and exit followup mode
+        actionState.followupMessage = ""
+        actionState.isInFollowupMode = false
+        textSyncTimer?.invalidate()
+        textSyncTimer = nil
+
+        // Show loading state in button only
+        actionState.isLoadingFollowup = true
+
+        // Send API request with full conversation history
+        actionState.followupTask = Task {
+            do {
+                let response = try await openAIService.getChatCompletion(messages: actionState.conversationHistory)
+
+                await MainActor.run {
+                    // Only process if not cancelled
+                    guard !Task.isCancelled else { return }
+
+                    // Add assistant response to conversation history
+                    actionState.conversationHistory.append([
+                        "role": "assistant",
+                        "content": response
+                    ])
+
+                    actionState.isLoadingFollowup = false
+                    actionState.followupTask = nil
+                    actionState.shouldScrollToBottom = true
+                    NSLog("✅ Received followup response")
+                }
+            } catch {
+                await MainActor.run {
+                    // Only process if not cancelled
+                    guard !Task.isCancelled else { return }
+
+                    // Add error message to conversation
+                    actionState.conversationHistory.append([
+                        "role": "assistant",
+                        "content": "Error: \(error.localizedDescription)"
+                    ])
+                    actionState.isLoadingFollowup = false
+                    actionState.followupTask = nil
+                    NSLog("❌ Followup request failed: \(error)")
+                }
+            }
+        }
+    }
+
+    private func cancelFollowupRequest() {
+        // Cancel the task
+        actionState.followupTask?.cancel()
+        actionState.followupTask = nil
+
+        // Remove the last user message from conversation history
+        if let lastMessage = actionState.conversationHistory.last,
+           lastMessage["role"] == "user" {
+            actionState.conversationHistory.removeLast()
+        }
+
+        // Reset loading state
+        actionState.isLoadingFollowup = false
+
+        NSLog("❌ Followup request cancelled")
     }
 
     private func replaceTextWithResponse(_ text: String) {
