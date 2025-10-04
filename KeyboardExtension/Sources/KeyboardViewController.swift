@@ -123,6 +123,7 @@ private class CopilotActionState: ObservableObject {
     @Published var isInFollowupMode = false // Track if user is composing a followup message
     @Published var followupMessage = "" // The user's followup message text
     var currentWebView: WKWebView? // Reference to current web view for reload
+    var savedTextSelection: (before: String?, after: String?)? // Saved cursor position when entering followup mode
 }
 
 private struct WebView: UIViewRepresentable {
@@ -402,6 +403,7 @@ private struct BlurredLine: View {
 private struct TextResponseView: View {
     let headerText: String
     @ObservedObject var actionState: CopilotActionState
+    @State private var cursorVisible = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -444,15 +446,30 @@ private struct TextResponseView: View {
                                 if actionState.isInFollowupMode && actionState.showFollowupButton {
                                     HStack {
                                         Spacer()
-                                        Text(actionState.followupMessage.isEmpty ? "Type followup..." : actionState.followupMessage)
-                                            .font(.system(size: 16, weight: .regular))
-                                            .foregroundColor(actionState.followupMessage.isEmpty ? .gray : .primary)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                                    .fill(Color.gray.opacity(0.1))
-                                            )
+                                        HStack(spacing: 4) {
+                                            Text(actionState.followupMessage.isEmpty ? "Type followup..." : actionState.followupMessage)
+                                                .font(.system(size: 16, weight: .regular))
+                                                .foregroundColor(actionState.followupMessage.isEmpty ? .gray : .primary)
+
+                                            // Blinking cursor
+                                            if actionState.isInFollowupMode {
+                                                Text("|")
+                                                    .font(.system(size: 16, weight: .regular))
+                                                    .foregroundColor(.primary)
+                                                    .opacity(cursorVisible ? 1 : 0)
+                                                    .onAppear {
+                                                        withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                                                            cursorVisible = false
+                                                        }
+                                                    }
+                                            }
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(Color.gray.opacity(0.1))
+                                        )
                                     }
                                     .padding(.trailing, 12)
                                     .padding(.bottom, 12)
@@ -838,6 +855,7 @@ private struct CopilotKeyboardView: View {
     let onToggle: (() -> Void)?
     let onSpeak: (() -> Void)?
     let onFollowup: (() -> Void)?
+    let onStopTextSync: (() -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
     @ObservedObject var speechManager: SpeechManager
@@ -888,6 +906,7 @@ private struct CopilotKeyboardView: View {
                         actionState.invertedToggle = false
                         actionState.isInFollowupMode = false
                         actionState.followupMessage = ""
+                        onStopTextSync?()
                     },
                     onReload: onReload,
                     onCopy: (actionState.responseText != nil || actionState.isLoading) ? onCopy : nil,
@@ -1018,14 +1037,24 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private var cancellables = Set<AnyCancellable>()
+    private var textSyncTimer: Timer?
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
 
-        // Update followup message if in followup mode
+        // If in followup mode, just sync the text to our bubble
+        // Accept that we can't hide the cursor in the app - it's a keyboard extension limitation
         if actionState.isInFollowupMode {
-            if let textProxy = textDocumentProxy as? UITextDocumentProxy {
-                actionState.followupMessage = textProxy.documentContextBeforeInput ?? ""
+            syncTextToFollowup()
+        }
+    }
+
+    private func syncTextToFollowup() {
+        if let textProxy = textDocumentProxy as? UITextDocumentProxy {
+            let currentText = textProxy.documentContextBeforeInput ?? ""
+            if currentText != actionState.followupMessage {
+                actionState.followupMessage = currentText
+                NSLog("📝 Synced text to followup: '\(currentText)'")
             }
         }
     }
@@ -1064,6 +1093,10 @@ final class KeyboardViewController: KeyboardInputViewController {
                 },
                 onFollowup: {
                     self?.handleFollowup()
+                },
+                onStopTextSync: {
+                    self?.textSyncTimer?.invalidate()
+                    self?.textSyncTimer = nil
                 },
                 actionState: self?.actionState ?? CopilotActionState(),
                 speechManager: self?.speechManager ?? SpeechManager()
@@ -1492,12 +1525,26 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Toggle followup mode
         actionState.isInFollowupMode = true
 
+        // Save current text selection/cursor position
+        if let textProxy = textDocumentProxy as? UITextDocumentProxy {
+            actionState.savedTextSelection = (
+                before: textProxy.documentContextBeforeInput,
+                after: textProxy.documentContextAfterInput
+            )
+        }
+
         // If keyboard is hidden (expanded state), show it
         if actionState.isExpanded {
             handleToggle()
         }
 
-        NSLog("Followup mode activated")
+        // Start timer to poll text changes (textDidChange may not be called reliably)
+        textSyncTimer?.invalidate()
+        textSyncTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.syncTextToFollowup()
+        }
+
+        NSLog("Followup mode activated with text sync timer")
     }
 
     private func replaceTextWithResponse(_ text: String) {
