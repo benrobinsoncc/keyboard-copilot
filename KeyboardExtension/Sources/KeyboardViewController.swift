@@ -118,6 +118,7 @@ private class CopilotActionState: ObservableObject {
     @Published var isReloading = false
     @Published var shouldAnimateHeight = false // Only animate height for webview
     @Published var showFireflies = false // Trigger fireflies dissolve effect
+    @Published var showFollowupButton = false // Show followup button for Explain action
     var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
@@ -488,16 +489,14 @@ private enum CopilotRewriteAction: String, CaseIterable, Identifiable {
 
 private enum CopilotSearchAction: String, CaseIterable, Identifiable {
     case google = "Google"
-    case explain = "Explain"
-    case factCheck = "Fact check"
+    case chatGPT = "ChatGPT"
 
     var id: String { rawValue }
 
     var symbolName: String {
         switch self {
         case .google: return "arrow.up.forward.square"
-        case .explain: return "lightbulb"
-        case .factCheck: return "checkmark.shield"
+        case .chatGPT: return "sparkle"
         }
     }
 }
@@ -564,15 +563,9 @@ private struct CopilotActionBar: View {
             }
             Button(action: {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onSearchSelection(.explain)
+                onSearchSelection(.chatGPT)
             }) {
-                Label("Explain", systemImage: "lightbulb")
-            }
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onSearchSelection(.factCheck)
-            }) {
-                Label("Fact check", systemImage: "checkmark.shield")
+                Label("ChatGPT", systemImage: "sparkle")
             }
         } label: {
             pillLabel(symbol: "magnifyingglass", title: "Ask")
@@ -609,9 +602,9 @@ private struct CopilotActionView: View {
     let onCancel: () -> Void
     let onReload: (() -> Void)?
     let onCopy: (() -> Void)?
-    let onShare: (() -> Void)?
     let onToggle: (() -> Void)?
     let onSpeak: (() -> Void)?
+    let onFollowup: (() -> Void)?
     let content: AnyView
     let isCopied: Bool
     let isExpanded: Bool
@@ -731,35 +724,38 @@ private struct CopilotActionView: View {
 
                     Spacer()
 
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onAction()
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: actionButtonIcon)
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(actionButtonText)
-                                .font(.system(size: 15, weight: .regular))
-                        }
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(height: 32)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.gray.opacity(0.1))
-                        )
-                    }
-
-                    // Show insert button if available
-                    if let onShare = onShare {
+                    // Only show main action button if it has text
+                    if !actionButtonText.isEmpty {
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            onShare()
+                            onAction()
                         }) {
                             HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle")
+                                Image(systemName: actionButtonIcon)
                                     .font(.system(size: 12, weight: .semibold))
-                                Text("Insert")
+                                Text(actionButtonText)
+                                    .font(.system(size: 15, weight: .regular))
+                            }
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
+                        }
+                    }
+
+                    // Show followup button if available
+                    if actionState.showFollowupButton, let onFollowup = onFollowup {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onFollowup()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrowshape.turn.up.left")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Followup")
                                     .font(.system(size: 15, weight: .regular))
                             }
                             .foregroundColor(.primary)
@@ -792,9 +788,9 @@ private struct CopilotKeyboardView: View {
     let onInsertText: ((String) -> Void)?
     let onReload: (() -> Void)?
     let onCopy: (() -> Void)?
-    let onShare: (() -> Void)?
     let onToggle: (() -> Void)?
     let onSpeak: (() -> Void)?
+    let onFollowup: (() -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
     @ObservedObject var speechManager: SpeechManager
@@ -841,12 +837,13 @@ private struct CopilotKeyboardView: View {
                         actionState.allowsToggle = false
                         actionState.currentWebView = nil
                         actionState.actionViewHeight = 0
+                        actionState.showFollowupButton = false
                     },
                     onReload: onReload,
                     onCopy: (actionState.responseText != nil || actionState.isLoading) ? onCopy : nil,
-                    onShare: actionState.currentURL != nil ? onShare : nil,
                     onToggle: actionState.allowsToggle ? onToggle : nil,
                     onSpeak: (actionState.responseText != nil || actionState.isLoading) ? onSpeak : nil,
+                    onFollowup: onFollowup,
                     content: content,
                     isCopied: actionState.isCopied,
                     isExpanded: actionState.isExpanded,
@@ -1004,14 +1001,14 @@ final class KeyboardViewController: KeyboardInputViewController {
                 onCopy: {
                     self?.handleCopy()
                 },
-                onShare: {
-                    self?.handleShare()
-                },
                 onToggle: {
                     self?.handleToggle()
                 },
                 onSpeak: {
                     self?.handleSpeak()
+                },
+                onFollowup: {
+                    self?.handleFollowup()
                 },
                 actionState: self?.actionState ?? CopilotActionState(),
                 speechManager: self?.speechManager ?? SpeechManager()
@@ -1051,10 +1048,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         switch action {
         case .google:
             showGoogleSearch()
-        case .explain:
-            showExplain()
-        case .factCheck:
-            showFactCheck()
+        case .chatGPT:
+            showChatGPT()
         }
     }
 
@@ -1070,10 +1065,10 @@ final class KeyboardViewController: KeyboardInputViewController {
         return contextText.isEmpty ? nil : contextText
     }
 
-    private func showExplain() {
+    private func showChatGPT() {
         guard let text = getTextForAction(), !text.isEmpty else { return }
 
-        currentActionType = .explain
+        currentActionType = .chatGPT
         currentWriteActionType = nil
         currentRewriteActionType = nil
         currentInputText = text
@@ -1081,15 +1076,16 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Show loading state
         actionState.isLoading = true
         actionState.responseText = nil
+        actionState.showFollowupButton = true
         let textResponseView = TextResponseView(
-            headerText: "Explain",
+            headerText: "ChatGPT",
             actionState: actionState
         )
 
         showActionView(
             content: AnyView(textResponseView),
-            buttonText: "Insert",
-            buttonIcon: "checkmark.circle",
+            buttonText: "",
+            buttonIcon: "",
             responseText: nil,
             expandHeight: false,
             growFromBottom: true
@@ -1107,52 +1103,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 
                 case .failure(let error):
                     let errorMessage = "Failed to generate response. Please try again."
-                    NSLog("Explain error: \(error)")
-                    self.actionState.responseText = errorMessage
-                    self.actionState.isLoading = false
-                }
-            }
-        }
-    }
-
-    private func showFactCheck() {
-        guard let text = getTextForAction(), !text.isEmpty else { return }
-
-        currentActionType = .factCheck
-        currentWriteActionType = nil
-        currentRewriteActionType = nil
-        currentInputText = text
-
-        // Show loading state
-        actionState.isLoading = true
-        actionState.responseText = nil
-        let textResponseView = TextResponseView(
-            headerText: "Fact Check",
-            actionState: actionState
-        )
-
-        showActionView(
-            content: AnyView(textResponseView),
-            buttonText: "Insert",
-            buttonIcon: "checkmark.circle",
-            responseText: nil,
-            expandHeight: false,
-            growFromBottom: true
-        )
-
-        // Call OpenAI API
-        openAIService.factCheck(inputText: text) { [weak self] result in
-            guard let self = self else { return }
-
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let response):
-                    self.actionState.responseText = response
-                    self.actionState.isLoading = false
-
-                case .failure(let error):
-                    let errorMessage = "Failed to generate response. Please try again."
-                    NSLog("Fact Check error: \(error)")
+                    NSLog("ChatGPT error: \(error)")
                     self.actionState.responseText = errorMessage
                     self.actionState.isLoading = false
                 }
@@ -1417,10 +1368,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Handle search actions
         if let actionType = currentActionType {
             switch actionType {
-            case .explain:
-                showExplain()
-            case .factCheck:
-                showFactCheck()
+            case .chatGPT:
+                showChatGPT()
             case .google:
                 break // Google doesn't need reload (handled above)
             }
@@ -1472,21 +1421,9 @@ final class KeyboardViewController: KeyboardInputViewController {
         speechManager.speak(responseText)
     }
 
-    private func handleShare() {
-        guard let webView = actionState.currentWebView,
-              let currentURL = webView.url else { return }
-
-        // Insert the current URL on a new line
-        guard let textProxy = textDocumentProxy as? UITextDocumentProxy else { return }
-
-        // Check if there's existing text
-        let hasTextBefore = !(textProxy.documentContextBeforeInput?.isEmpty ?? true)
-
-        if hasTextBefore {
-            textProxy.insertText("\n\n" + currentURL.absoluteString)
-        } else {
-            textProxy.insertText(currentURL.absoluteString)
-        }
+    private func handleFollowup() {
+        // TODO: Implement followup functionality
+        NSLog("Followup tapped")
     }
 
     private func replaceTextWithResponse(_ text: String) {
