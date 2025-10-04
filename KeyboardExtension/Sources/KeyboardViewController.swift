@@ -446,30 +446,15 @@ private struct TextResponseView: View {
                                 if actionState.isInFollowupMode && actionState.showFollowupButton {
                                     HStack {
                                         Spacer()
-                                        HStack(spacing: 4) {
-                                            Text(actionState.followupMessage.isEmpty ? "Type followup..." : actionState.followupMessage)
-                                                .font(.system(size: 16, weight: .regular))
-                                                .foregroundColor(actionState.followupMessage.isEmpty ? .gray : .primary)
-
-                                            // Blinking cursor
-                                            if actionState.isInFollowupMode {
-                                                Text("|")
-                                                    .font(.system(size: 16, weight: .regular))
-                                                    .foregroundColor(.primary)
-                                                    .opacity(cursorVisible ? 1 : 0)
-                                                    .onAppear {
-                                                        withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
-                                                            cursorVisible = false
-                                                        }
-                                                    }
-                                            }
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                                .fill(Color.gray.opacity(0.1))
-                                        )
+                                        Text(actionState.followupMessage.isEmpty ? "Type followup..." : actionState.followupMessage)
+                                            .font(.system(size: 16, weight: .regular))
+                                            .foregroundColor(actionState.followupMessage.isEmpty ? .gray : .primary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                                    .fill(Color.gray.opacity(0.1))
+                                            )
                                     }
                                     .padding(.trailing, 12)
                                     .padding(.bottom, 12)
@@ -1525,13 +1510,24 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Toggle followup mode
         actionState.isInFollowupMode = true
 
-        // Save current text selection/cursor position
+        // Clear the app's text field so followup bubble starts empty
         if let textProxy = textDocumentProxy as? UITextDocumentProxy {
+            // Save current text selection/cursor position
             actionState.savedTextSelection = (
                 before: textProxy.documentContextBeforeInput,
                 after: textProxy.documentContextAfterInput
             )
+
+            // Delete all text before cursor
+            if let textBefore = textProxy.documentContextBeforeInput {
+                for _ in textBefore {
+                    textProxy.deleteBackward()
+                }
+            }
         }
+
+        // Clear the followup message to start fresh
+        actionState.followupMessage = ""
 
         // If keyboard is hidden (expanded state), show it
         if actionState.isExpanded {
