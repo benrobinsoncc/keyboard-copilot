@@ -120,6 +120,8 @@ private class CopilotActionState: ObservableObject {
     @Published var showFireflies = false // Trigger fireflies dissolve effect
     @Published var showFollowupButton = false // Show followup button for Explain action
     @Published var invertedToggle = false // For ChatGPT: expanded=no keyboard, collapsed=keyboard shown
+    @Published var isInFollowupMode = false // Track if user is composing a followup message
+    @Published var followupMessage = "" // The user's followup message text
     var currentWebView: WKWebView? // Reference to current web view for reload
 }
 
@@ -426,17 +428,48 @@ private struct TextResponseView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .offset(y: -8)
                 } else if let responseText = actionState.responseText {
-                    ScrollView {
-                        BlurredText(
-                            text: responseText,
-                            font: .system(size: 16, weight: .regular),
-                            color: .primary
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 12) {
+                                // AI response
+                                BlurredText(
+                                    text: responseText,
+                                    font: .system(size: 16, weight: .regular),
+                                    color: .primary
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+
+                                // User's followup message bubble (if in followup mode AND followup is available) - below AI response, on right
+                                if actionState.isInFollowupMode && actionState.showFollowupButton {
+                                    HStack {
+                                        Spacer()
+                                        Text(actionState.followupMessage.isEmpty ? "Type followup..." : actionState.followupMessage)
+                                            .font(.system(size: 16, weight: .regular))
+                                            .foregroundColor(actionState.followupMessage.isEmpty ? .gray : .primary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                    .fill(Color.gray.opacity(0.1))
+                                            )
+                                    }
+                                    .padding(.trailing, 12)
+                                    .padding(.bottom, 12)
+                                    .id("followupBubble") // Add ID for scrolling
+                                }
+                            }
+                            .padding(.bottom, 12)
+                        }
+                        .frame(maxHeight: .infinity)
+                        .onChange(of: actionState.isInFollowupMode) { isInFollowup in
+                            if isInFollowup {
+                                withAnimation {
+                                    proxy.scrollTo("followupBubble", anchor: .bottom)
+                                }
+                            }
+                        }
                     }
-                    .frame(maxHeight: .infinity)
                     .id(responseText)
                     .opacity(actionState.showFireflies ? 0 : 1)
                 }
@@ -753,26 +786,33 @@ private struct CopilotActionView: View {
                         }
                     }
 
-                    // Show followup button if available
+                    // Show followup/ask button if available
                     if actionState.showFollowupButton, let onFollowup = onFollowup {
+                        let isInFollowupMode = actionState.isInFollowupMode
+                        let hasText = !actionState.followupMessage.isEmpty
+                        let buttonText = isInFollowupMode ? "Ask" : "Followup"
+                        let buttonIcon = isInFollowupMode ? "arrow.up.circle" : "arrowshape.turn.up.left"
+                        let isDisabled = isInFollowupMode && !hasText
+
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             onFollowup()
                         }) {
                             HStack(spacing: 6) {
-                                Image(systemName: "arrowshape.turn.up.left")
+                                Image(systemName: buttonIcon)
                                     .font(.system(size: 12, weight: .semibold))
-                                Text("Followup")
+                                Text(buttonText)
                                     .font(.system(size: 15, weight: .regular))
                             }
-                            .foregroundColor(.primary)
+                            .foregroundColor(isInFollowupMode && hasText ? .white : (isDisabled ? .primary.opacity(0.3) : .primary))
                             .padding(.horizontal, 12)
                             .frame(height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.gray.opacity(0.1))
+                                    .fill(isInFollowupMode && hasText ? Color.black : Color.gray.opacity(0.1))
                             )
                         }
+                        .disabled(isDisabled)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -846,6 +886,8 @@ private struct CopilotKeyboardView: View {
                         actionState.actionViewHeight = 0
                         actionState.showFollowupButton = false
                         actionState.invertedToggle = false
+                        actionState.isInFollowupMode = false
+                        actionState.followupMessage = ""
                     },
                     onReload: onReload,
                     onCopy: (actionState.responseText != nil || actionState.isLoading) ? onCopy : nil,
@@ -976,6 +1018,17 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private var cancellables = Set<AnyCancellable>()
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+
+        // Update followup message if in followup mode
+        if actionState.isInFollowupMode {
+            if let textProxy = textDocumentProxy as? UITextDocumentProxy {
+                actionState.followupMessage = textProxy.documentContextBeforeInput ?? ""
+            }
+        }
+    }
 
     override func viewWillSetupKeyboardView() {
         setupKeyboardView { [weak self] controller in
@@ -1126,6 +1179,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Show loading state
         actionState.isLoading = true
         actionState.responseText = nil
+        actionState.showFollowupButton = false
+        actionState.isInFollowupMode = false
         let textResponseView = TextResponseView(
             headerText: "Compose",
             actionState: actionState
@@ -1171,6 +1226,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Show loading state
         actionState.isLoading = true
         actionState.responseText = nil
+        actionState.showFollowupButton = false
+        actionState.isInFollowupMode = false
         let textResponseView = TextResponseView(
             headerText: "Polish",
             actionState: actionState
@@ -1216,6 +1273,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Show loading state
         actionState.isLoading = true
         actionState.responseText = nil
+        actionState.showFollowupButton = false
+        actionState.isInFollowupMode = false
         let textResponseView = TextResponseView(
             headerText: "Shorten",
             actionState: actionState
@@ -1430,8 +1489,15 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 
     private func handleFollowup() {
-        // TODO: Implement followup functionality
-        NSLog("Followup tapped")
+        // Toggle followup mode
+        actionState.isInFollowupMode = true
+
+        // If keyboard is hidden (expanded state), show it
+        if actionState.isExpanded {
+            handleToggle()
+        }
+
+        NSLog("Followup mode activated")
     }
 
     private func replaceTextWithResponse(_ text: String) {
