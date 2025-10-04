@@ -657,7 +657,20 @@ private struct TextResponseView: View {
 
                 // Fireflies dissolve effect overlay
                 if actionState.showFireflies {
-                    VortexView(.fireflies) {
+                    VortexView(
+                        VortexSystem(
+                            tags: ["circle"],
+                            shape: .ellipse(radius: 0.5),
+                            birthRate: 200,
+                            lifespan: 2,
+                            speed: 0,
+                            speedVariation: 0.25,
+                            angleRange: .degrees(360),
+                            colors: .ramp(.white, .white, .white.opacity(0)),
+                            size: 0.01,
+                            sizeMultiplierAtDeath: 100
+                        )
+                    ) {
                         Circle()
                             .fill(.white)
                             .frame(width: 16, height: 16)
