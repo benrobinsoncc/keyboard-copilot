@@ -706,16 +706,12 @@ private struct CopilotActionView: View {
                         .disabled(actionState.isLoading)
                     }
 
-                    // Show toggle button if available
+                    // Show keyboard show/hide toggle button if available
                     if allowsToggle, let onToggle = onToggle {
                         let iconName: String = {
-                            if actionState.invertedToggle {
-                                // For ChatGPT: compress = expand (show keyboard), expand = compress (hide keyboard)
-                                return toggleIconExpanded ? "rectangle.expand.vertical" : "rectangle.compress.vertical"
-                            } else {
-                                // For Google: normal behavior
-                                return toggleIconExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
-                            }
+                            // When expanded (no keyboard): show "keyboard" (indicates keyboard is hidden)
+                            // When collapsed (keyboard visible): show "keyboard.chevron.compact.down" (indicates keyboard is shown)
+                            return toggleIconExpanded ? "keyboard" : "keyboard.chevron.compact.down"
                         }()
 
                         Button(action: {
