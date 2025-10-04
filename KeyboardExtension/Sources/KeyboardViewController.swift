@@ -583,7 +583,7 @@ private struct TextResponseView: View {
                                                     .padding(.vertical, 8)
                                                     .background(
                                                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                            .fill(Color.gray.opacity(0.1))
+                                                            .fill(Color(uiColor: .secondarySystemBackground))
                                                     )
                                                     .frame(maxWidth: 300, alignment: .trailing)
                                             }
@@ -605,7 +605,7 @@ private struct TextResponseView: View {
                                             .padding(.vertical, 8)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                    .fill(Color.gray.opacity(0.1))
+                                                    .fill(Color(uiColor: .secondarySystemBackground))
                                             )
                                             .frame(maxWidth: 300, alignment: .trailing)
                                     }
@@ -659,9 +659,9 @@ private struct TextResponseView: View {
                 if actionState.showFireflies {
                     VortexView(.fireflies) {
                         Circle()
-                            .fill(.primary.opacity(0.3))  // Color with transparency
-                            .frame(width: 24, height: 16)
-                            .blur(radius: 3)
+                            .fill(.white)
+                            .frame(width: 16, height: 16)
+                            .blur(radius: 2)
                             .tag("circle")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -802,7 +802,11 @@ private struct CopilotActionBar: View {
             .frame(height: 32)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white)
+                    .fill(Color(uiColor: UIColor { traitCollection in
+                        traitCollection.userInterfaceStyle == .dark
+                            ? UIColor(red: 0x6D / 255.0, green: 0x6D / 255.0, blue: 0x6D / 255.0, alpha: 1.0)
+                            : .systemBackground
+                    }))
             )
 
             Color.clear.frame(height: 1)
@@ -837,9 +841,13 @@ private struct CopilotActionView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // Divider with 12px spacing above action bar
-                Color.gray.opacity(0.2)
-                    .frame(height: 1)
-                    .padding(.bottom, 12)
+                Color(uiColor: UIColor { traitCollection in
+                    traitCollection.userInterfaceStyle == .dark
+                        ? UIColor.separator.withAlphaComponent(0.35)
+                        : UIColor.separator.withAlphaComponent(0.1)
+                })
+                .frame(height: 1)
+                .padding(.bottom, 12)
 
                 // Action bar
                 HStack {
@@ -853,7 +861,7 @@ private struct CopilotActionView: View {
                             .frame(width: 32, height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.gray.opacity(0.1))
+                                    .fill(Color(uiColor: .secondarySystemBackground))
                             )
                     }
 
@@ -871,7 +879,7 @@ private struct CopilotActionView: View {
                                 .frame(width: 32, height: 32)
                                 .background(
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.gray.opacity(0.1))
+                                        .fill(Color(uiColor: .secondarySystemBackground))
                                 )
                         }
                     }
@@ -891,7 +899,7 @@ private struct CopilotActionView: View {
                             .frame(width: 32, height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.gray.opacity(0.1))
+                                    .fill(Color(uiColor: .secondarySystemBackground))
                             )
                         }
                         .disabled(isCopied || actionState.isLoading)
@@ -914,7 +922,7 @@ private struct CopilotActionView: View {
                             .frame(width: 32, height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.gray.opacity(0.1))
+                                    .fill(Color(uiColor: .secondarySystemBackground))
                             )
                         }
                         .disabled(actionState.isLoading)
@@ -938,7 +946,7 @@ private struct CopilotActionView: View {
                                 .frame(width: 32, height: 32)
                                 .background(
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.gray.opacity(0.1))
+                                        .fill(Color(uiColor: .secondarySystemBackground))
                                 )
                         }
                     }
@@ -962,7 +970,7 @@ private struct CopilotActionView: View {
                             .frame(height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.gray.opacity(0.1))
+                                    .fill(Color(uiColor: .secondarySystemBackground))
                             )
                         }
                     }
@@ -983,7 +991,7 @@ private struct CopilotActionView: View {
                             HStack(spacing: 6) {
                                 if actionState.isLoadingFollowup {
                                     ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .progressViewStyle(CircularProgressViewStyle(tint: Color(uiColor: .systemBackground)))
                                         .scaleEffect(0.8)
                                 } else {
                                     Image(systemName: buttonIcon)
@@ -992,12 +1000,12 @@ private struct CopilotActionView: View {
                                 Text(buttonText)
                                     .font(.system(size: 15, weight: .regular))
                             }
-                            .foregroundColor((isInFollowupMode && hasText) || actionState.isLoadingFollowup ? .white : (isDisabled ? .primary.opacity(0.3) : .primary))
+                            .foregroundColor((isInFollowupMode && hasText) || actionState.isLoadingFollowup ? Color(uiColor: .systemBackground) : (isDisabled ? .primary.opacity(0.3) : .primary))
                             .padding(.horizontal, 12)
                             .frame(height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill((isInFollowupMode && hasText) || actionState.isLoadingFollowup ? Color.black : Color.gray.opacity(0.1))
+                                    .fill((isInFollowupMode && hasText) || actionState.isLoadingFollowup ? Color.primary : Color(uiColor: .secondarySystemBackground))
                             )
                         }
                         .disabled(isDisabled && !actionState.isLoadingFollowup)
@@ -1006,7 +1014,7 @@ private struct CopilotActionView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
             }
-            .background(Color.white)
+            .background(Color(uiColor: .systemBackground))
             .cornerRadius(16)
         }
         .frame(maxHeight: .infinity, alignment: .top)
