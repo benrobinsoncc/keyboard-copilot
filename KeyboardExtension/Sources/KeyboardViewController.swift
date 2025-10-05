@@ -125,9 +125,11 @@ private class CopilotActionState: ObservableObject {
     @Published var isLoadingFollowup = false // Track if followup request is loading
     @Published var lastAnimatedMessageIndex = -1 // Track the last message index that was animated
     @Published var shouldScrollToBottom = false // Trigger for scrolling to new messages
+    @Published var conversationHistory: [[String: String]] = [] // Array of messages: [{"role": "user"/"assistant", "content": "..."}]
+    @Published var animationGeneration = 0 // Increment to force re-animation
+    @Published var isActionContainerEnlarged = false // Track if action container is in enlarged mode
     var currentWebView: WKWebView? // Reference to current web view for reload
     var savedTextSelection: (before: String?, after: String?)? // Saved cursor position when entering followup mode
-    var conversationHistory: [[String: String]] = [] // Array of messages: [{"role": "user"/"assistant", "content": "..."}]
     var followupTask: Task<Void, Never>? // Reference to current followup task for cancellation
 }
 
@@ -207,6 +209,7 @@ private struct WrappingHStack: Layout {
 private struct AnimatedCharacter: View {
     let character: String
     let index: Int
+    let animationTrigger: Int
     @State private var opacity: Double = 0
     @State private var blur: CGFloat = 8
 
@@ -214,6 +217,17 @@ private struct AnimatedCharacter: View {
         Text(character)
             .opacity(opacity)
             .blur(radius: blur)
+            .onChange(of: animationTrigger) { _ in
+                // Reset state
+                opacity = 0
+                blur = 8
+                // Trigger animation
+                let delay = Double(index) * 0.01
+                withAnimation(.easeOut(duration: 0.2).delay(delay)) {
+                    opacity = 1
+                    blur = 0
+                }
+            }
             .onAppear {
                 let delay = Double(index) * 0.01
                 withAnimation(.easeOut(duration: 0.2).delay(delay)) {
@@ -229,11 +243,12 @@ private struct AnimatedWord: View {
     let startIndex: Int
     let font: Font
     let color: Color
+    let animationTrigger: Int
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(word.enumerated()), id: \.offset) { charIndex, char in
-                AnimatedCharacter(character: String(char), index: startIndex + charIndex)
+                AnimatedCharacter(character: String(char), index: startIndex + charIndex, animationTrigger: animationTrigger)
                     .font(font)
                     .foregroundColor(color)
             }
@@ -351,13 +366,15 @@ private struct BlurredText: View {
     let text: String
     let font: Font
     let color: Color
+    let animationTrigger: Int
 
     private let paragraphs: [(lines: [(line: String, startIndex: Int)], isEmptyLine: Bool)]
 
-    init(text: String, font: Font, color: Color) {
+    init(text: String, font: Font, color: Color, animationTrigger: Int) {
         self.text = text
         self.font = font
         self.color = color
+        self.animationTrigger = animationTrigger
 
         // Split into lines first, then group into paragraphs
         let textLines = text.components(separatedBy: .newlines)
@@ -397,7 +414,7 @@ private struct BlurredText: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(paragraphData.lines.enumerated()), id: \.offset) { lineIndex, lineData in
-                            BlurredLine(line: lineData.line, startIndex: lineData.startIndex, font: font, color: color)
+                            BlurredLine(line: lineData.line, startIndex: lineData.startIndex, font: font, color: color, animationTrigger: animationTrigger)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -413,15 +430,17 @@ private struct BlurredLine: View {
     let startIndex: Int
     let font: Font
     let color: Color
+    let animationTrigger: Int
 
     private let wordData: [(word: String, startIndex: Int, isBold: Bool)]
     private let isHeader: Bool
 
-    init(line: String, startIndex: Int, font: Font, color: Color) {
+    init(line: String, startIndex: Int, font: Font, color: Color, animationTrigger: Int) {
         self.line = line
         self.startIndex = startIndex
         self.font = font
         self.color = color
+        self.animationTrigger = animationTrigger
 
         // Check if line starts with ### (header)
         var processedLine = line
@@ -494,12 +513,14 @@ private struct BlurredLine: View {
                         word: data.word,
                         startIndex: data.startIndex,
                         font: (isHeader || data.isBold) ? font.weight(.semibold) : font,
-                        color: color
+                        color: color,
+                        animationTrigger: animationTrigger
                     )
                     if index < wordData.count - 1 {
                         AnimatedCharacter(
                             character: " ",
-                            index: data.startIndex + data.word.count
+                            index: data.startIndex + data.word.count,
+                            animationTrigger: animationTrigger
                         )
                         .font((isHeader || data.isBold) ? font.weight(.semibold) : font)
                         .foregroundColor(color)
@@ -514,16 +535,42 @@ private struct TextResponseView: View {
     let headerText: String
     @ObservedObject var actionState: CopilotActionState
     @State private var cursorVisible = true
+    var onExpandCollapse: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            Text(headerText.uppercased())
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.gray)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
+            // Header with expand/collapse toggle
+            ZStack(alignment: .topLeading) {
+                // Header text (left side)
+                Text(headerText.uppercased())
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Show expand/collapse toggle only for ChatGPT (top-right corner)
+                if actionState.showFollowupButton, let onExpandCollapse = onExpandCollapse {
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onExpandCollapse()
+                        }) {
+                            // Show enlarge icon when: keyboard is showing OR (keyboard hidden and not enlarged)
+                            // Show collapse icon when: keyboard hidden and enlarged
+                            let shouldShowEnlargeIcon = !actionState.isExpanded || (actionState.isExpanded && !actionState.isActionContainerEnlarged)
+                            Image(systemName: shouldShowEnlargeIcon ? "arrow.down.left.and.arrow.up.right" : "arrow.up.forward.and.arrow.down.backward")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.gray)
+                                .frame(width: 24, height: 24)
+                        }
+                        .padding(.top, 14)
+                        .padding(.trailing, 14)
+                    }
+                }
+            }
 
             // Response text (scrollable) or loading indicator
             ZStack {
@@ -553,11 +600,12 @@ private struct TextResponseView: View {
                                                 BlurredText(
                                                     text: content,
                                                     font: .system(size: 16, weight: .regular),
-                                                    color: .primary
+                                                    color: .primary,
+                                                    animationTrigger: actionState.animationGeneration
                                                 )
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(.horizontal, 16)
-                                                .id(index)
+                                                .id("blurred-\(actionState.animationGeneration)-\(index)-\(content.prefix(20).hashValue)")
                                                 .onAppear {
                                                     actionState.lastAnimatedMessageIndex = index
                                                 }
@@ -645,11 +693,13 @@ private struct TextResponseView: View {
                         BlurredText(
                             text: responseText,
                             font: .system(size: 16, weight: .regular),
-                            color: .primary
+                            color: .primary,
+                            animationTrigger: actionState.animationGeneration
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
+                        .id("blurred-\(actionState.animationGeneration)-\(responseText.prefix(20).hashValue)") // Force recreation when text changes
                     }
                     .frame(maxHeight: .infinity)
                     .opacity(actionState.showFireflies ? 0 : 1)
@@ -837,6 +887,7 @@ private struct CopilotActionView: View {
     let onToggle: (() -> Void)?
     let onSpeak: (() -> Void)?
     let onFollowup: (() -> Void)?
+    let onExpandCollapse: (() -> Void)?
     let content: AnyView
     let isCopied: Bool
     let isExpanded: Bool
@@ -1047,6 +1098,7 @@ private struct CopilotKeyboardView: View {
     let onToggle: (() -> Void)?
     let onSpeak: (() -> Void)?
     let onFollowup: (() -> Void)?
+    let onExpandCollapse: (() -> Void)?
     let onStopTextSync: (() -> Void)?
 
     @ObservedObject var actionState: CopilotActionState
@@ -1099,6 +1151,7 @@ private struct CopilotKeyboardView: View {
                         actionState.isInFollowupMode = false
                         actionState.followupMessage = ""
                         actionState.conversationHistory = []
+                        actionState.isActionContainerEnlarged = false
                         onStopTextSync?()
                     },
                     onReload: onReload,
@@ -1106,6 +1159,7 @@ private struct CopilotKeyboardView: View {
                     onToggle: actionState.allowsToggle ? onToggle : nil,
                     onSpeak: (actionState.responseText != nil || actionState.isLoading) ? onSpeak : nil,
                     onFollowup: onFollowup,
+                    onExpandCollapse: onExpandCollapse,
                     content: content,
                     isCopied: actionState.isCopied,
                     isExpanded: actionState.isExpanded,
@@ -1163,6 +1217,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var currentInputText: String?
     private var expandedHeight: CGFloat = 0
     private var collapsedHeight: CGFloat = 0
+    private var baseActionContainerHeight: CGFloat = 0 // Base height of action container
+    private var keyboardHeight: CGFloat = 0 // Height of the keyboard portion
     private lazy var openAIService: OpenAIService = {
         guard let apiKey = Self.loadAPIKey() else {
             fatalError("Failed to load OpenAI API key from Config.plist")
@@ -1287,6 +1343,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 onFollowup: {
                     self?.handleFollowup()
                 },
+                onExpandCollapse: {
+                    self?.handleExpandCollapse()
+                },
                 onStopTextSync: {
                     self?.textSyncTimer?.invalidate()
                     self?.textSyncTimer = nil
@@ -1359,9 +1418,15 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.responseText = nil
         actionState.showFollowupButton = true
         actionState.invertedToggle = true
+        actionState.lastAnimatedMessageIndex = -1
+        actionState.animationGeneration += 1
+        actionState.isActionContainerEnlarged = false
         let textResponseView = TextResponseView(
             headerText: "ChatGPT",
-            actionState: actionState
+            actionState: actionState,
+            onExpandCollapse: { [weak self] in
+                self?.handleExpandCollapse()
+            }
         )
 
         showActionView(
@@ -1420,6 +1485,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.isInFollowupMode = false
         actionState.conversationHistory = []
         actionState.lastAnimatedMessageIndex = -1
+        actionState.animationGeneration += 1
         let textResponseView = TextResponseView(
             headerText: "Compose",
             actionState: actionState
@@ -1469,6 +1535,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.isInFollowupMode = false
         actionState.conversationHistory = []
         actionState.lastAnimatedMessageIndex = -1
+        actionState.animationGeneration += 1
         let textResponseView = TextResponseView(
             headerText: "Polish",
             actionState: actionState
@@ -1518,6 +1585,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         actionState.isInFollowupMode = false
         actionState.conversationHistory = []
         actionState.lastAnimatedMessageIndex = -1
+        actionState.animationGeneration += 1
         let textResponseView = TextResponseView(
             headerText: "Shorten",
             actionState: actionState
@@ -1574,6 +1642,12 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Store heights for toggle functionality
         self.expandedHeight = calculatedExpandedHeight
         self.collapsedHeight = currentHeight
+
+        // For ChatGPT, store the base action container height and calculate keyboard height
+        if actionState.invertedToggle {
+            self.baseActionContainerHeight = targetHeight - 6
+            self.keyboardHeight = currentHeight // Standard keyboard height
+        }
 
         // Step 1: Fade out keyboard immediately
         withAnimation(.easeOut(duration: 0.2)) {
@@ -1664,6 +1738,13 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
+        // Clear response text and reset animation state to ensure blur animation plays
+        actionState.responseText = nil
+        actionState.conversationHistory = []
+        actionState.lastAnimatedMessageIndex = -1
+        actionState.isLoading = true
+        actionState.animationGeneration += 1
+
         // Trigger fireflies dissolve effect
         actionState.showFireflies = true
 
@@ -1745,6 +1826,8 @@ final class KeyboardViewController: KeyboardInputViewController {
         }
 
         // Otherwise, enter followup mode
+        NSLog("🔄 Entering followup mode - isExpanded: \(actionState.isExpanded), isEnlarged: \(actionState.isActionContainerEnlarged)")
+
         actionState.isInFollowupMode = true
 
         // Clear the app's text field so followup bubble starts empty
@@ -1766,9 +1849,24 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Clear the followup message to start fresh
         actionState.followupMessage = ""
 
-        // If keyboard is hidden (expanded state), show it
+        // If keyboard is hidden, show it
+        // If enlarged, first collapse it, then show keyboard
         if actionState.isExpanded {
-            handleToggle()
+            if actionState.isActionContainerEnlarged {
+                // First collapse the enlarged container
+                NSLog("🔄 Collapsing enlarged container before showing keyboard for followup")
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    actionState.isActionContainerEnlarged = false
+                    actionState.actionViewHeight = baseActionContainerHeight
+                }
+
+                // Then show keyboard after a short delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.handleToggle()
+                }
+            } else {
+                handleToggle()
+            }
         }
 
         // Start timer to poll text changes (textDidChange may not be called reliably)
@@ -1878,8 +1976,71 @@ final class KeyboardViewController: KeyboardInputViewController {
         }
 
         if actionState.invertedToggle {
-            // For ChatGPT: action container height stays the same, only keyboard visibility changes
-            // No height changes needed - just toggle keyboard visibility via isExpanded
+            // For ChatGPT: toggle keyboard visibility
+            if actionState.isExpanded {
+                // Going from showing keyboard to hiding keyboard
+                NSLog("🔽 Hiding keyboard - base: \(baseActionContainerHeight), keyboard: \(keyboardHeight), isEnlarged: \(actionState.isActionContainerEnlarged)")
+
+                // Reset enlarged state when hiding keyboard
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    actionState.isActionContainerEnlarged = false
+                    // Reset action container to base height
+                    actionState.actionViewHeight = baseActionContainerHeight
+                }
+
+                // Shrink total height back to just action container
+                UIView.animate(withDuration: 0.4, delay: 0, options: .curveEaseInOut) {
+                    self.removeHeightConstraint()
+                    let constraint = NSLayoutConstraint(
+                        item: self.view!,
+                        attribute: .height,
+                        relatedBy: .equal,
+                        toItem: nil,
+                        attribute: .notAnAttribute,
+                        multiplier: 1.0,
+                        constant: self.baseActionContainerHeight + 6
+                    )
+                    constraint.priority = .required
+                    self.view.addConstraint(constraint)
+                    self.heightConstraint = constraint
+                    self.view.layoutIfNeeded()
+                }
+            } else {
+                // Going from hidden to showing keyboard
+                NSLog("🔼 Showing keyboard - base: \(baseActionContainerHeight), keyboard: \(keyboardHeight), isEnlarged: \(actionState.isActionContainerEnlarged)")
+
+                let wasEnlarged = actionState.isActionContainerEnlarged
+
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    // If was enlarged, shrink action container back to base height
+                    if wasEnlarged {
+                        actionState.isActionContainerEnlarged = false
+                        actionState.actionViewHeight = baseActionContainerHeight
+                    }
+                }
+
+                // Total height stays the same - keyboard appears below container
+                // (No need to change total height if already enlarged, otherwise expand it)
+                if !wasEnlarged {
+                    let totalHeight = baseActionContainerHeight + keyboardHeight + 6
+                    UIView.animate(withDuration: 0.4, delay: 0, options: .curveEaseInOut) {
+                        self.removeHeightConstraint()
+                        let constraint = NSLayoutConstraint(
+                            item: self.view!,
+                            attribute: .height,
+                            relatedBy: .equal,
+                            toItem: nil,
+                            attribute: .notAnAttribute,
+                            multiplier: 1.0,
+                            constant: totalHeight
+                        )
+                        constraint.priority = .required
+                        self.view.addConstraint(constraint)
+                        self.heightConstraint = constraint
+                        self.view.layoutIfNeeded()
+                    }
+                }
+            }
         } else {
             // For Google/webview: webview height needs to change to accommodate keyboard
             if actionState.isExpanded {
@@ -1898,6 +2059,89 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Change icon after animation completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             self.actionState.toggleIconState = !wasExpanded
+        }
+    }
+
+    private func handleExpandCollapse() {
+        // Only for ChatGPT (invertedToggle mode)
+        guard actionState.invertedToggle else { return }
+
+        NSLog("📏 handleExpandCollapse - isExpanded: \(actionState.isExpanded), isEnlarged: \(actionState.isActionContainerEnlarged), base: \(baseActionContainerHeight), keyboard: \(keyboardHeight)")
+
+        if actionState.isExpanded && actionState.isActionContainerEnlarged {
+            // Scenario 1: Keyboard is HIDDEN and container is ENLARGED
+            // Tapping collapse → shrink container and total height back to normal
+            NSLog("⬇️ Collapsing enlarged container")
+
+            withAnimation(.easeInOut(duration: 0.4)) {
+                actionState.isActionContainerEnlarged = false
+                actionState.actionViewHeight = baseActionContainerHeight
+            }
+
+            // Shrink total keyboard extension height back to base
+            UIView.animate(withDuration: 0.4, delay: 0, options: .curveEaseInOut) {
+                self.removeHeightConstraint()
+                let constraint = NSLayoutConstraint(
+                    item: self.view!,
+                    attribute: .height,
+                    relatedBy: .equal,
+                    toItem: nil,
+                    attribute: .notAnAttribute,
+                    multiplier: 1.0,
+                    constant: self.baseActionContainerHeight + 6
+                )
+                constraint.priority = .required
+                self.view.addConstraint(constraint)
+                self.heightConstraint = constraint
+                self.view.layoutIfNeeded()
+            }
+        } else if actionState.isExpanded && !actionState.isActionContainerEnlarged {
+            // Scenario 2: Keyboard is HIDDEN and container is NORMAL size
+            // Tapping enlarge → expand container and total height to match when keyboard is showing
+            NSLog("⬆️ Enlarging container from normal")
+
+            let totalHeight = baseActionContainerHeight + keyboardHeight + 6
+
+            withAnimation(.easeInOut(duration: 0.4)) {
+                actionState.isActionContainerEnlarged = true
+                // Expand action container to fill the full height
+                actionState.actionViewHeight = baseActionContainerHeight + keyboardHeight
+            }
+
+            // Expand total keyboard extension height
+            UIView.animate(withDuration: 0.4, delay: 0, options: .curveEaseInOut) {
+                self.removeHeightConstraint()
+                let constraint = NSLayoutConstraint(
+                    item: self.view!,
+                    attribute: .height,
+                    relatedBy: .equal,
+                    toItem: nil,
+                    attribute: .notAnAttribute,
+                    multiplier: 1.0,
+                    constant: totalHeight
+                )
+                constraint.priority = .required
+                self.view.addConstraint(constraint)
+                self.heightConstraint = constraint
+                self.view.layoutIfNeeded()
+            }
+        } else {
+            // Scenario 3: Keyboard is SHOWING
+            // Tapping enlarge → hide keyboard AND expand container to fill space
+            NSLog("⬆️ Keyboard showing, enlarging container to fill space")
+
+            withAnimation(.easeInOut(duration: 0.4)) {
+                actionState.isExpanded = true // Hide keyboard
+                actionState.isActionContainerEnlarged = true
+                // Expand action container to fill the total height
+                actionState.actionViewHeight = baseActionContainerHeight + keyboardHeight
+            }
+
+            // Total keyboard height stays the same (already at full height), just container expands
+            // Update keyboard toggle icon after animation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                self.actionState.toggleIconState = true
+            }
         }
     }
 
