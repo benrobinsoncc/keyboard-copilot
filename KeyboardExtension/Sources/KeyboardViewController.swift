@@ -128,6 +128,9 @@ private class CopilotActionState: ObservableObject {
     @Published var conversationHistory: [[String: String]] = [] // Array of messages: [{"role": "user"/"assistant", "content": "..."}]
     @Published var animationGeneration = 0 // Increment to force re-animation
     @Published var isActionContainerEnlarged = false // Track if action container is in enlarged mode
+    @Published var savedScrollPosition: Int? = nil // Track scroll position when enlarging/collapsing
+    @Published var shouldScrollToFollowup = false // Trigger to scroll to followup bubble only when entering followup mode
+    @Published var lockScrollPosition = false // Lock scroll position when typing followup
     var currentWebView: WKWebView? // Reference to current web view for reload
     var savedTextSelection: (before: String?, after: String?)? // Saved cursor position when entering followup mode
     var followupTask: Task<Void, Never>? // Reference to current followup task for cancellation
@@ -566,8 +569,8 @@ private struct TextResponseView: View {
                                 .foregroundColor(.gray)
                                 .frame(width: 24, height: 24)
                         }
-                        .padding(.top, 14)
-                        .padding(.trailing, 14)
+                        .padding(.top, 10)
+                        .padding(.trailing, 10)
                     }
                 }
             }
@@ -589,10 +592,11 @@ private struct TextResponseView: View {
                 } else if !actionState.conversationHistory.isEmpty {
                     // Show conversation history for ChatGPT (has followup functionality)
                     ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 12) {
-                                // Show all messages in conversation history
-                                ForEach(Array(actionState.conversationHistory.enumerated()), id: \.offset) { index, message in
+                        GeometryReader { geometry in
+                            ScrollView(.vertical, showsIndicators: true) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    // Show all messages in conversation history
+                                    ForEach(Array(actionState.conversationHistory.enumerated()), id: \.offset) { index, message in
                                     if let role = message["role"], let content = message["content"] {
                                         if role == "assistant" {
                                             // AI message - left aligned with animation for new messages
@@ -663,25 +667,56 @@ private struct TextResponseView: View {
                                     .id("followupBubble")
                                 }
                             }
-                            .padding(.bottom, 12)
+                            // Add bottom padding to allow scrolling last AI message to top (hiding followup bubble)
+                            .padding(.bottom, max(12, geometry.size.height - 50))
                         }
                         .frame(maxHeight: .infinity)
-                        .onChange(of: actionState.isInFollowupMode) { isInFollowup in
-                            if isInFollowup {
+                        }
+                        .onChange(of: actionState.shouldScrollToFollowup) { shouldScroll in
+                            if shouldScroll {
                                 withAnimation {
                                     proxy.scrollTo("followupBubble", anchor: .bottom)
+                                }
+                                // Reset the trigger
+                                DispatchQueue.main.async {
+                                    actionState.shouldScrollToFollowup = false
                                 }
                             }
                         }
                         .onChange(of: actionState.shouldScrollToBottom) { shouldScroll in
                             if shouldScroll, let lastIndex = actionState.conversationHistory.indices.last {
-                                // Scroll to the new AI message position with smooth animation
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    proxy.scrollTo(lastIndex, anchor: .top)
-                                }
-                                // Reset the trigger
-                                DispatchQueue.main.async {
+                                // Scroll to show the new AI message at the top of the view
+                                // Wait for animation to start, then scroll
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        // Scroll to the last message (AI response) and position it at the top
+                                        proxy.scrollTo(lastIndex, anchor: .top)
+                                    }
+                                    // Reset the trigger
                                     actionState.shouldScrollToBottom = false
+                                }
+                            }
+                        }
+                        .onChange(of: actionState.savedScrollPosition) { savedPosition in
+                            // Restore scroll position after container resize
+                            if let position = savedPosition {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    proxy.scrollTo(position, anchor: .top)
+                                    actionState.savedScrollPosition = nil
+                                }
+                            }
+                        }
+                        .onChange(of: actionState.conversationHistory.count) { count in
+                            // When a new message is added to conversation, handle scroll based on context
+                            if count > 0 {
+                                if actionState.isInFollowupMode {
+                                    // In followup mode: keep scroll position to prevent followup bubble from moving
+                                    let targetIndex = max(0, count - 2)
+                                    if targetIndex < count {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                            proxy.scrollTo(targetIndex, anchor: .top)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1459,6 +1494,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 
                     self.actionState.responseText = response
                     self.actionState.isLoading = false
+                    self.actionState.shouldScrollToBottom = true
 
                 case .failure(let error):
                     let errorMessage = "Failed to generate response. Please try again."
@@ -1849,6 +1885,9 @@ final class KeyboardViewController: KeyboardInputViewController {
         // Clear the followup message to start fresh
         actionState.followupMessage = ""
 
+        // Trigger scroll to followup bubble
+        actionState.shouldScrollToFollowup = true
+
         // If keyboard is hidden, show it
         // If enlarged, first collapse it, then show keyboard
         if actionState.isExpanded {
@@ -2067,6 +2106,11 @@ final class KeyboardViewController: KeyboardInputViewController {
         guard actionState.invertedToggle else { return }
 
         NSLog("📏 handleExpandCollapse - isExpanded: \(actionState.isExpanded), isEnlarged: \(actionState.isActionContainerEnlarged), base: \(baseActionContainerHeight), keyboard: \(keyboardHeight)")
+
+        // Save scroll position before resize (use last message index as anchor)
+        if !actionState.conversationHistory.isEmpty {
+            actionState.savedScrollPosition = actionState.conversationHistory.indices.last
+        }
 
         if actionState.isExpanded && actionState.isActionContainerEnlarged {
             // Scenario 1: Keyboard is HIDDEN and container is ENLARGED
