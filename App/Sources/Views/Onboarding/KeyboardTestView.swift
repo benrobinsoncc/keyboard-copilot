@@ -47,18 +47,13 @@ struct KeyboardTestView: View {
                 .padding(.vertical, 16)
             }
 
-            Divider()
-
             // Message input
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 0) {
                 TextField("Type a message...", text: $messageText, axis: .vertical)
                     .focused($isTextFieldFocused)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(uiColor: .secondarySystemBackground))
-                    )
+                    .padding(.leading, 12)
+                    .padding(.trailing, 28)
+                    .padding(.vertical, 7.5)
                     .lineLimit(1...4)
                     .onSubmit {
                         sendMessage()
@@ -66,11 +61,17 @@ struct KeyboardTestView: View {
 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
+                        .font(.system(size: 28))
                         .foregroundStyle(messageText.isEmpty ? .gray : Color.accentColor)
                 }
                 .disabled(messageText.isEmpty)
+                .padding(.trailing, 2)
+                .padding(.bottom, 2)
             }
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemBackground))
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(Color(uiColor: .systemBackground))
